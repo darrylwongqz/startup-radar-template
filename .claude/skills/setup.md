@@ -49,8 +49,15 @@ If the user wants Gmail:
 5. For each newsletter, **offer to generate a custom parser** in `sources/gmail.py` tailored to that newsletter's format. Ask the user to paste a sample email (or point to a saved one), then write the parser function.
 
 ### 4. Output
-- SQLite (always on, required)
-- Google Sheets (opt-in) — if yes, ask for sheet ID or offer to create a new sheet. Uses the same `credentials.json` as Gmail.
+Explain the default to the user before asking:
+
+> "By default, results go to a local SQLite database and you browse them through a Streamlit dashboard (`streamlit run app.py`). The dashboard lets you filter, mark companies as Interested / Not Interested / Applied, and find warm intros. This works out of the box with no extra setup.
+>
+> You can optionally also mirror results to a Google Sheet — useful if you want to share the list with a mentor or access it from your phone. This is opt-in and requires the same Google OAuth as the Gmail source."
+
+Then ask:
+- Enable Google Sheets mirror? *(default no)*
+- If yes: existing sheet ID, or create a new one?
 
 ### 5. LinkedIn connections (optional)
 - "Do you want to import your LinkedIn connections? The dashboard will flag startups where a 1st-degree connection works, and the DeepDive skill can surface intros via the company's investors."

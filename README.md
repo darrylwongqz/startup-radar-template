@@ -133,6 +133,32 @@ startup-radar-template/
     settings.json
 ```
 
+## Logs & troubleshooting
+
+When the pipeline runs via `python daily_run.py` (or any of the scheduling templates), it writes one log file per day to `logs/YYYY-MM-DD.log`. The log captures every step: which sources fired, how many candidates each returned, what the filter rejected, what got written to the database, and any errors with full tracebacks.
+
+If something looks wrong, start here:
+
+```bash
+# Latest log
+cat logs/$(date +%Y-%m-%d).log
+
+# All logs, most recent last
+ls -lt logs/
+```
+
+Common patterns to grep for:
+
+| You see | Likely cause |
+|---|---|
+| `Daily run failed: ... token ...` | Gmail OAuth expired — delete `token.json` and run `python main.py` interactively to re-auth |
+| `RSS error (FeedName): ...` | Feed URL changed or temporarily down — check the feed in a browser |
+| `EDGAR error: ...` | SEC rate-limited the User-Agent — usually transient, next run recovers |
+| `0 candidate(s)` on every source | Your filters may be too strict — loosen `targets.industries` or `min_stage` in `config.yaml` |
+| `No new startups to add` but you expected some | Candidates matched but got filtered — check the extraction lines above for `After filter:` |
+
+Running `python main.py` directly (instead of `daily_run.py`) prints everything to the console in real time — useful when you're actively debugging.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
