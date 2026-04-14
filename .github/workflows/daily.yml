@@ -1,9 +1,10 @@
 name: Daily Startup Radar
 
 on:
-  schedule:
-    # 15:00 UTC daily = 08:00 PT / 11:00 ET. Edit to taste.
-    - cron: '0 15 * * *'
+  # Scheduled run disabled — real pipeline runs locally on Xavier's desktop.
+  # Re-enable by uncommenting the schedule block below.
+  # schedule:
+  #   - cron: '0 15 * * *'
   workflow_dispatch: {}
 
 jobs:
