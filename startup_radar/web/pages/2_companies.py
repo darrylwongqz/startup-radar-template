@@ -11,10 +11,11 @@ from datetime import datetime
 
 import streamlit as st
 
-import database
 from startup_radar.web import state
-from startup_radar.web.cache import load_data
+from startup_radar.web.cache import get_storage, load_data
 from startup_radar.web.lookup import lookup_company
+
+storage = get_storage()
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 STATUS_OPTIONS = ["", "Interested", "Not Interested", "Applied", "Wishlist"]
@@ -25,7 +26,7 @@ df_startups, _ = load_data()
 def _get_connections_for_companies(company_names):
     result = {}
     for name in company_names:
-        conns = database.search_connections_by_company(name)
+        conns = storage.search_connections_by_company(name)
         if not conns.empty:
             parts = []
             for _, c in conns.iterrows():
@@ -40,7 +41,7 @@ def _get_connections_for_companies(company_names):
 
 def _add_connections_col(frame, company_col="Company Name"):
     frame = frame.copy()
-    if database.get_connections_count() == 0:
+    if storage.get_connections_count() == 0:
         frame["Connections"] = ""
         return frame
     conn_map = _get_connections_for_companies(frame[company_col].tolist())
@@ -90,7 +91,7 @@ if st.session_state.get(state.CO_SHOW_ADD):
         if not ac_name.strip():
             st.error("Company Name is required.")
         else:
-            inserted = database.insert_startups(
+            inserted = storage.insert_startups(
                 [
                     {
                         "company_name": ac_name.strip(),
@@ -146,18 +147,18 @@ def _persist_company_changes(original_df, edited_df):
             continue
         company = original_df.loc[idx, "Company Name"]
         if edited_df.loc[idx, "\U0001f5d1\ufe0f"]:
-            database.delete_startup(company)
+            storage.delete_startup(company)
             changed = True
             continue
         old = original_df.loc[idx, "Status"]
         new = edited_df.loc[idx, "Status"]
         if old != new:
-            database.update_startup_status(company, new)
+            storage.update_startup_status(company, new)
             if new == "Applied":
-                ts = database.get_tracker_status(company)
+                ts = storage.get_tracker_status(company)
                 if not ts:
-                    database.upsert_tracker_status(company, "Applied", "", "")
-                    database.insert_activity(
+                    storage.upsert_tracker_status(company, "Applied", "", "")
+                    storage.insert_activity(
                         {
                             "company_name": company,
                             "role_title": "",

@@ -15,7 +15,6 @@ Single-user Python tool that aggregates startup-funding signals from RSS, Hacker
 ## Repo layout
 ```
 .
-├── database.py                              # SQLite layer (33 fns; moves to startup_radar/storage/ Phase 10)
 ├── startup_radar/                           # the package (created Phase 3)
 │   ├── cli.py                               # Typer CLI (Phase 4): run, serve, deepdive; `run --scheduled` is the cron entry
 │   ├── models.py                            # @dataclass Startup, JobMatch
@@ -24,15 +23,21 @@ Single-user Python tool that aggregates startup-funding signals from RSS, Hacker
 │   ├── parsing/{funding,normalize}.py       # AMOUNT_RE/STAGE_RE/COMPANY_*; normalize_company, dedup_key
 │   ├── research/deepdive.py                 # AI research brief generator (moved from root in Phase 4)
 │   ├── sources/                             # Source ABC + per-source subclasses
-│   │   ├── base.py                          # Source ABC: name, enabled_key, fetch(cfg), healthcheck()
+│   │   ├── base.py                          # Source ABC: name, enabled_key, fetch(cfg, storage=None), healthcheck()
 │   │   ├── registry.py                      # SOURCES: dict[str, Source]
 │   │   └── {rss,hackernews,sec_edgar,gmail}.py
+│   ├── storage/                             # Phase 10 — `git mv database.py → storage/sqlite.py`
+│   │   ├── base.py                          # Storage Protocol — 33 methods (reads, writes, dedup, tracker, connections)
+│   │   ├── sqlite.py                        # SqliteStorage: one connection/process, WAL, writes in `with self._conn:`
+│   │   ├── migrator.py                      # apply_pending() — PRAGMA user_version walker; alembic rejected (CRITIQUE_APPENDIX §4)
+│   │   ├── __init__.py                      # load_storage(cfg) factory — single entry point
+│   │   └── migrations/0001_initial.sql      # baseline schema; idempotent via CREATE TABLE IF NOT EXISTS
 │   └── web/                                 # Streamlit dashboard (split Phase 9)
-│       ├── app.py                           # ~80-line shell: page-config, config load, DB init, sidebar
-│       ├── cache.py                         # @st.cache_data(ttl=60) wrappers around database.*
+│       ├── app.py                           # ~80-line shell: page-config, config load, get_storage(), sidebar
+│       ├── cache.py                         # @st.cache_resource get_storage() + @st.cache_data(ttl=60) read wrappers
 │       ├── state.py                         # session-state + widget key constants (collision-asserted at import)
 │       ├── lookup.py                        # DuckDuckGo company lookup (hoisted DDGS import)
-│       ├── connections.py                   # LinkedIn CSV → tier-1/tier-2 helpers (moved from repo root in Phase 9)
+│       ├── connections.py                   # LinkedIn CSV → tier-1/tier-2 helpers (storage injected; moved from repo root in Phase 9)
 │       └── pages/{1_dashboard,2_companies,3_jobs,4_deepdive,5_tracker}.py
 ├── sinks/google_sheets.py
 ├── scheduling/                              # cron, launchd, Windows Task templates
@@ -47,7 +52,7 @@ Target layout (Phase 10+) lives in `docs/PRODUCTION_REFACTOR_PLAN.md` §3.1.
 
 ## Core invariants
 - **Must:** every new HTTP call uses `timeout=` (or shared `httpx.Client` once it lands). `feedparser` is the exception — see `startup_radar/sources/rss.py` (sets `socket.setdefaulttimeout(20)` at module load).
-- **Must:** every source subclasses `startup_radar.sources.base.Source`, sets `name` + `enabled_key`, and implements `fetch(cfg) -> list[Startup]`. Free-function `fetch(...)` is gone since Phase 3.
+- **Must:** every source subclasses `startup_radar.sources.base.Source`, sets `name` + `enabled_key`, and implements `fetch(cfg, storage=None) -> list[Startup]`. Free-function `fetch(...)` is gone since Phase 3. `storage` is only consumed by sources that dedup (today: `gmail.py` via `is_processed` / `mark_processed`).
 - **Must:** every source registers in `startup_radar/sources/registry.py`.
 - **Must:** funding regexes (`AMOUNT_RE`, `STAGE_RE`, `COMPANY_SUBJECT_RE`, `COMPANY_INLINE_RE`) live ONLY in `startup_radar/parsing/funding.py`. Never re-introduce duplicates per source.
 - **Must:** company-name normalization goes through `normalize_company` / `dedup_key` in `startup_radar/parsing/normalize.py`.
@@ -88,6 +93,8 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 - CLI entry-point is registered via `[project.scripts]` in `pyproject.toml` and the `startup_radar.cli:app` shim — `uv sync --all-extras` refreshes it after edits to `cli.py` are not needed (editable install), but adding/removing commands does require a re-sync to refresh the `startup-radar` script wrapper.
 - Version is derived by `setuptools-scm` from the git tag history (`phase-*` tags yield dev-style versions; `fallback_version = "0.1.0"` for source tarballs).
 - vcrpy cassettes live in `tests/fixtures/cassettes/<source>/`. `CI=1` sets `record_mode=none` (missing cassette → test fails loud). Locally `record_mode=once` records on first run. Re-record by deleting the yaml + rerunning the test. EDGAR cassettes scrub User-Agent to `startup-radar-test`; don't commit a real email.
+- `SqliteStorage` holds **one** `sqlite3.Connection` for its lifetime (Phase 10). `check_same_thread=False` is required so Streamlit's thread pool can share reads; single-writer is still enforced because only the CLI pipeline or a user-triggered button writes. Never call `sqlite3.connect()` directly — go through `load_storage(cfg)` (CLI/tests) or `get_storage()` (dashboard, cached via `@st.cache_resource`). Every write wraps `with self._conn:` for atomic commit-or-rollback.
+- Schema changes = drop `NNNN_<slug>.sql` into `startup_radar/storage/migrations/` with the next integer prefix (migrator rejects gaps and bad filenames at load time). No down-migrations, no alembic — rollback is git-revert + restore from the backup tarball. Next `startup-radar run` (or `make db-migrate`) applies it.
 
 ## @import references
 For source-author conventions: @.claude/rules/sources.md

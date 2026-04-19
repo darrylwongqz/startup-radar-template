@@ -54,7 +54,7 @@ class SECEdgarSource(Source):
         except requests.RequestException as e:
             return (False, f"EDGAR unreachable: {e.__class__.__name__}")
 
-    def fetch(self, cfg: AppConfig) -> list[Startup]:
+    def fetch(self, cfg: AppConfig, storage=None) -> list[Startup]:
         edgar_cfg = cfg.sources.sec_edgar
         if not edgar_cfg.enabled:
             return []

@@ -1,5 +1,5 @@
 """Streamlit dashboard shell. Pages auto-discovered from
-``startup_radar/web/pages/``. Owns page-config, config load, DB init,
+``startup_radar/web/pages/``. Owns page-config, config load, storage init,
 and the shared sidebar — nothing page-specific.
 
 Session-state keys read/written here: ``state.LI_CSV_UPLOAD`` (uploader).
@@ -13,22 +13,19 @@ from pathlib import Path
 
 import streamlit as st
 
-import database
 from startup_radar.config import load_config
 from startup_radar.web import state
+from startup_radar.web.cache import get_storage
 
 st.set_page_config(page_title="Startup Radar", page_icon=":satellite:", layout="wide")
 
 try:
     cfg = load_config()
-    sqlite_path = cfg.output.sqlite.path if cfg.output.sqlite.enabled else None
-    if sqlite_path:
-        database.set_db_path(sqlite_path)
 except Exception as e:
     st.error(f"Config error: {e}")
     st.stop()
 
-database.init_db()
+storage = get_storage()
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]  # startup_radar/web/app.py -> repo
 REPORTS_DIR = PROJECT_DIR / "reports"
@@ -47,8 +44,8 @@ if st.sidebar.button("Run pipeline now"):
 st.sidebar.divider()
 st.sidebar.markdown("**LinkedIn Connections**")
 
-_li_last = database.get_connections_last_uploaded()
-_li_count = database.get_connections_count()
+_li_last = storage.get_connections_last_uploaded()
+_li_count = storage.get_connections_count()
 if _li_last:
     try:
         _li_dt = datetime.fromisoformat(_li_last)
@@ -76,5 +73,5 @@ if _li_file is not None:
         for r in _csv.DictReader(_lines[_data_start:])
         if r.get("First Name") or r.get("Last Name")
     ]
-    st.sidebar.success(f"Imported {database.import_connections(_rows)} connections")
+    st.sidebar.success(f"Imported {storage.import_connections(_rows)} connections")
     st.rerun()

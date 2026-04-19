@@ -12,9 +12,10 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-import database
 from startup_radar.web import state
-from startup_radar.web.cache import load_data
+from startup_radar.web.cache import get_storage, load_data
+
+storage = get_storage()
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 ACTIVITY_TYPES = ["Emailed", "Applied", "Called", "Meeting", "Follow-up", "Interview", "Note"]
@@ -55,7 +56,7 @@ if st.session_state.get(state.AP_SHOW_ADD_ACTIVITY):
         if not act_company:
             st.error("Company is required.")
         else:
-            database.insert_activity(
+            storage.insert_activity(
                 {
                     "company_name": act_company,
                     "role_title": act_role.strip(),
@@ -73,7 +74,7 @@ if st.session_state.get(state.AP_SHOW_ADD_ACTIVITY):
 
 # Reminders ----------------------------------------------------------------
 _reminders = []
-_overdue_tracker = database.get_overdue_followups(TODAY)
+_overdue_tracker = storage.get_overdue_followups(TODAY)
 for _, row in _overdue_tracker.iterrows():
     _is_overdue = row["follow_up_date"] < TODAY
     _contact = f" \u2014 {row['contact_name']}" if row.get("contact_name") else ""
@@ -88,7 +89,7 @@ for _, row in _overdue_tracker.iterrows():
         }
     )
 
-_all_acts = database.get_activities()
+_all_acts = storage.get_activities()
 if not _all_acts.empty:
     _email_acts = _all_acts[_all_acts["activity_type"] == "Emailed"]
     if not _email_acts.empty:
@@ -129,7 +130,7 @@ if _reminders:
         st.markdown(f"{r['icon']} {r['text']}  \n{r['detail']}")
     st.divider()
 
-tracker_summary = database.get_tracker_summary()
+tracker_summary = storage.get_tracker_summary()
 _activity_log_statuses = ["In Progress", "Gone Cold"]
 _applied_tracker = (
     tracker_summary[~tracker_summary["Status"].isin(_activity_log_statuses + ["Rejected"])].copy()
@@ -176,7 +177,7 @@ if st.session_state.get(state.AP_SHOW_ADD_APPLIED):
         elif not ap_role.strip():
             st.error("Role Title is required.")
         else:
-            database.insert_activity(
+            storage.insert_activity(
                 {
                     "company_name": company_name,
                     "role_title": ap_role.strip(),
@@ -189,13 +190,13 @@ if st.session_state.get(state.AP_SHOW_ADD_APPLIED):
                     "notes": ap_notes.strip(),
                 }
             )
-            database.upsert_tracker_status(
+            storage.upsert_tracker_status(
                 company_name, ap_status, ap_role.strip(), ap_notes.strip()
             )
-            existing_keys = database.get_existing_job_keys()
+            existing_keys = storage.get_existing_job_keys()
             key = f"{company_name.lower().strip()}|{ap_role.strip().lower()}"
             if key not in existing_keys:
-                database.insert_job_matches(
+                storage.insert_job_matches(
                     [
                         {
                             "company_name": company_name,
@@ -209,7 +210,7 @@ if st.session_state.get(state.AP_SHOW_ADD_APPLIED):
                         }
                     ]
                 )
-            database.update_job_status(company_name, ap_role.strip(), ap_status)
+            storage.update_job_status(company_name, ap_role.strip(), ap_status)
             st.session_state[state.AP_SHOW_ADD_APPLIED] = False
             load_data.clear()
             st.rerun()
@@ -230,7 +231,7 @@ def _persist_tracker(original_df, edited_df):
             continue
         company = original_df.loc[idx, "Company"]
         if edited_df.loc[idx, "\U0001f5d1\ufe0f"]:
-            database.delete_tracker_entry(company)
+            storage.delete_tracker_entry(company)
             changed = True
             continue
         old_s = original_df.loc[idx, "Status"]
@@ -242,7 +243,7 @@ def _persist_tracker(original_df, edited_df):
             or (original_df.loc[idx, "Role"] or "") != new_r
             or (original_df.loc[idx, "Notes"] or "") != new_n
         ):
-            database.upsert_tracker_status(company, new_s, new_r, new_n)
+            storage.upsert_tracker_status(company, new_s, new_r, new_n)
             changed = True
     return changed
 
@@ -290,7 +291,7 @@ if st.session_state.get(state.AP_SHOW_ADD_LOG):
         if not company_name:
             st.error("Company is required.")
         else:
-            database.insert_activity(
+            storage.insert_activity(
                 {
                     "company_name": company_name,
                     "role_title": al_role.strip(),
@@ -303,9 +304,9 @@ if st.session_state.get(state.AP_SHOW_ADD_LOG):
                     "notes": al_notes.strip(),
                 }
             )
-            ts = database.get_tracker_status(company_name)
+            ts = storage.get_tracker_status(company_name)
             if not ts:
-                database.upsert_tracker_status(company_name, "In Progress", al_role.strip(), "")
+                storage.upsert_tracker_status(company_name, "In Progress", al_role.strip(), "")
             st.session_state[state.AP_SHOW_ADD_LOG] = False
             st.rerun()
 

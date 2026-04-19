@@ -15,20 +15,30 @@ allowed-tools: [Read, Write, Edit, Glob, Grep, Bash]
 2. Read `startup_radar/sources/base.py` (the `Source` ABC) and `startup_radar/sources/rss.py` as the cleanest reference pattern.
 3. Create `startup_radar/sources/<name>.py` with a `Source` subclass:
    ```python
+   from __future__ import annotations
+
+   from typing import TYPE_CHECKING
+
    from startup_radar.config import AppConfig
    from startup_radar.models import Startup
    from startup_radar.parsing.funding import AMOUNT_RE, STAGE_RE, COMPANY_SUBJECT_RE
    from startup_radar.sources.base import Source
 
+   if TYPE_CHECKING:
+       from startup_radar.storage import Storage
+
    class XSource(Source):
        name = "X"
        enabled_key = "x"
 
-       def fetch(self, cfg: AppConfig) -> list[Startup]:
+       def fetch(self, cfg: AppConfig, storage: Storage | None = None) -> list[Startup]:
            x_cfg = cfg.sources.x  # typed attribute access — add an `XConfig` sub-model in startup_radar/config/schema.py
            if not x_cfg.enabled:
                return []
            # …pull, parse, return list[Startup]…
+           # Only use `storage` if the source needs cross-run dedup — call
+           # `storage.is_processed(self.enabled_key, item_id)` and
+           # `storage.mark_processed(self.enabled_key, [...])`. Otherwise ignore it.
    ```
 4. Register in `startup_radar/sources/registry.py` — add the import and one entry to the `SOURCES` dict.
 5. Add the matching sub-model to `startup_radar/config/schema.py` (e.g. `XConfig(_Strict)` with `enabled: bool = False` + source-specific fields) and wire it into `SourcesConfig`.

@@ -87,7 +87,7 @@ class RSSSource(Source):
         except requests.RequestException as e:
             return (False, f"first feed unreachable: {e.__class__.__name__}")
 
-    def fetch(self, cfg: AppConfig) -> list[Startup]:
+    def fetch(self, cfg: AppConfig, storage=None) -> list[Startup]:
         rss_cfg = cfg.sources.rss
         if not rss_cfg.enabled:
             return []

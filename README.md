@@ -208,14 +208,22 @@ The `vcr_config` fixture records once (first run) and replays thereafter. In CI 
 
 **SEC EDGAR** requires a `User-Agent` with contact info — set it via the `_USER_AGENT` constant in `startup_radar/sources/sec_edgar.py` before recording. The cassette scrubber replaces it with `startup-radar-test` on disk; do not commit a cassette containing a real email address.
 
+### Schema changes
+
+SQLite schema is versioned via `PRAGMA user_version` and managed by a homegrown migrator in `startup_radar/storage/migrator.py` (alembic is intentionally not used — see `docs/CRITIQUE_APPENDIX.md` §4). To evolve the schema:
+
+1. Drop a new file into `startup_radar/storage/migrations/` named `NNNN_<slug>.sql` where `NNNN` is the next zero-padded integer (gaps and bad filenames are rejected at load time).
+2. Use `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` and give every new column a `DEFAULT` — migrations must be idempotent and safe over already-populated DBs.
+3. The next `startup-radar run` (or `make db-migrate`) applies pending migrations inside a single transaction and bumps `user_version` on success; failures roll back atomically. There are no down-migrations — roll back via `git revert` + restoring from `startup-radar backup`.
+
 ### Dashboard layout
 
 The Streamlit dashboard lives under `startup_radar/web/` as a native multi-page app:
 
 ```
 startup_radar/web/
-├── app.py                 # shell: page-config, config load, DB init, sidebar
-├── cache.py               # @st.cache_data(ttl=60) wrappers — every page imports reads from here
+├── app.py                 # shell: page-config, config load, get_storage(), sidebar
+├── cache.py               # @st.cache_resource get_storage() + @st.cache_data(ttl=60) read wrappers
 ├── state.py               # session-state / widget key constants (collision-asserted at import)
 ├── lookup.py              # DuckDuckGo company lookup (optional dep)
 ├── connections.py         # LinkedIn CSV tier-1/tier-2 helpers

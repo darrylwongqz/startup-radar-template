@@ -73,12 +73,12 @@ def pipeline() -> int:
     """Run the discovery pipeline once. Public API — also called by the
     ``Run pipeline now`` button in ``startup_radar.web.app``.
     """
-    import database
     from startup_radar.config import load_config
     from startup_radar.filters import StartupFilter
     from startup_radar.models import Startup
     from startup_radar.parsing.normalize import dedup_key
     from startup_radar.sources.registry import SOURCES
+    from startup_radar.storage import load_storage
 
     print("=" * 60)
     print("Startup Radar")
@@ -86,69 +86,69 @@ def pipeline() -> int:
     print("=" * 60)
 
     cfg = load_config()
-    sqlite_cfg = cfg.output.sqlite
-    if sqlite_cfg.enabled and sqlite_cfg.path:
-        database.set_db_path(sqlite_cfg.path)
-    database.init_db()
+    storage = load_storage(cfg)
 
-    all_startups: list[Startup] = []
-    for key, source in SOURCES.items():
-        sub_cfg = getattr(cfg.sources, key, None)
-        if sub_cfg is None or not getattr(sub_cfg, "enabled", False):
-            continue
-        print(f"\n[{source.name}] Fetching...")
-        found = source.fetch(cfg)
-        print(f"  {len(found)} candidate(s)")
-        all_startups.extend(found)
+    try:
+        all_startups: list[Startup] = []
+        for key, source in SOURCES.items():
+            sub_cfg = getattr(cfg.sources, key, None)
+            if sub_cfg is None or not getattr(sub_cfg, "enabled", False):
+                continue
+            print(f"\n[{source.name}] Fetching...")
+            found = source.fetch(cfg, storage=storage)
+            print(f"  {len(found)} candidate(s)")
+            all_startups.extend(found)
 
-    print(f"\nTotal extracted: {len(all_startups)}")
-    filtered = StartupFilter(cfg).filter(all_startups)
-    print(f"After filter: {len(filtered)}")
+        print(f"\nTotal extracted: {len(all_startups)}")
+        filtered = StartupFilter(cfg).filter(all_startups)
+        print(f"After filter: {len(filtered)}")
 
-    seen: set[str] = set()
-    deduped: list[Startup] = []
-    for s in filtered:
-        key = dedup_key(s.company_name)
-        if key and key not in seen:
-            seen.add(key)
-            deduped.append(s)
-    if len(deduped) < len(filtered):
-        print(f"After dedup: {len(deduped)}")
+        seen: set[str] = set()
+        deduped: list[Startup] = []
+        for s in filtered:
+            key = dedup_key(s.company_name)
+            if key and key not in seen:
+                seen.add(key)
+                deduped.append(s)
+        if len(deduped) < len(filtered):
+            print(f"After dedup: {len(deduped)}")
 
-    existing = database.get_existing_companies()
-    rejected = database.get_rejected_companies()
-    fresh = [
-        s
-        for s in deduped
-        if s.company_name.lower().strip() not in existing
-        and s.company_name.lower().strip() not in rejected
-    ]
-    skipped = len(deduped) - len(fresh)
-    if skipped:
-        print(f"Skipped {skipped} already-seen or rejected")
+        existing = storage.get_existing_companies()
+        rejected = storage.get_rejected_companies()
+        fresh = [
+            s
+            for s in deduped
+            if s.company_name.lower().strip() not in existing
+            and s.company_name.lower().strip() not in rejected
+        ]
+        skipped = len(deduped) - len(fresh)
+        if skipped:
+            print(f"Skipped {skipped} already-seen or rejected")
 
-    if fresh:
-        added = database.insert_startups(fresh)
-        print(f"Added {added} new startup(s) to SQLite")
-        for s in fresh:
-            amount = f" | {s.amount_raised}" if s.amount_raised else ""
-            stage = f" | {s.funding_stage}" if s.funding_stage else ""
-            print(f"  {s.company_name}{stage}{amount}  [{s.source}]")
-    else:
-        print("No new startups to add")
+        if fresh:
+            added = storage.insert_startups(fresh)
+            print(f"Added {added} new startup(s) to SQLite")
+            for s in fresh:
+                amount = f" | {s.amount_raised}" if s.amount_raised else ""
+                stage = f" | {s.funding_stage}" if s.funding_stage else ""
+                print(f"  {s.company_name}{stage}{amount}  [{s.source}]")
+        else:
+            print("No new startups to add")
 
-    sheets_cfg = cfg.output.google_sheets
-    if sheets_cfg.enabled and fresh:
-        try:
-            from sinks import google_sheets
+        sheets_cfg = cfg.output.google_sheets
+        if sheets_cfg.enabled and fresh:
+            try:
+                from sinks import google_sheets
 
-            google_sheets.append_startups(sheets_cfg.sheet_id, fresh)
-            print(f"Wrote {len(fresh)} to Google Sheet")
-        except Exception as e:
-            print(f"Google Sheets write failed: {e}")
+                google_sheets.append_startups(sheets_cfg.sheet_id, fresh)
+                print(f"Wrote {len(fresh)} to Google Sheet")
+            except Exception as e:
+                print(f"Google Sheets write failed: {e}")
 
-    print("\nDone.")
-    return 0
+        print("\nDone.")
+        return 0
+    finally:
+        storage.close()
 
 
 # --- commands --------------------------------------------------------------

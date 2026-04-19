@@ -19,10 +19,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-import database
 from startup_radar.web import state
-from startup_radar.web.cache import load_data
+from startup_radar.web.cache import get_storage, load_data
 from startup_radar.web.lookup import lookup_company
+
+storage = get_storage()
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 # repo root: pages/4_deepdive.py -> pages -> web -> startup_radar -> repo
@@ -80,7 +81,7 @@ if st.session_state.get(state.DD_SHOW_ADD):
         if not dd_name.strip():
             st.error("Company Name is required.")
         else:
-            inserted = database.insert_startups(
+            inserted = storage.insert_startups(
                 [
                     {
                         "company_name": dd_name.strip(),
@@ -187,13 +188,13 @@ if selected:
             st.session_state.pop(state.DD_SHOW_WARM, None)
 
     if st.session_state.get(state.DD_SHOW_WARM) == selected:
-        if database.get_connections_count() == 0:
+        if storage.get_connections_count() == 0:
             st.warning(
                 "No LinkedIn connections uploaded. Use the sidebar to upload your connections CSV."
             )
         else:
             with st.spinner(f"Searching connections for intros to {selected}..."):
-                tier1 = database.search_connections_by_company(selected)
+                tier1 = storage.search_connections_by_company(selected)
 
                 investor_names: list[str] = []
                 inv_path = _investors_path(selected)
@@ -221,14 +222,14 @@ if selected:
                         pass
 
                 tier2 = (
-                    database.search_connections_by_companies(investor_names)
+                    storage.search_connections_by_companies(investor_names)
                     if investor_names
                     else pd.DataFrame()
                 )
                 if not tier2.empty and not tier1.empty:
                     tier2 = tier2[~tier2["url"].isin(tier1["url"])]
 
-                hidden = database.get_hidden_intros(selected)
+                hidden = storage.get_hidden_intros(selected)
                 intro_rows = []
                 for df_tier, tier_label in [(tier1, "Direct"), (tier2, "Investor")]:
                     if df_tier.empty:
@@ -284,10 +285,10 @@ if selected:
                         continue
                     row = _intro_df.loc[idx]
                     if action == "Hide":
-                        database.hide_intro(row["LinkedIn"], selected)
+                        storage.hide_intro(row["LinkedIn"], selected)
                         _intros_changed = True
                     elif action == "Save to Tracker":
-                        database.insert_activity(
+                        storage.insert_activity(
                             {
                                 "company_name": selected,
                                 "role_title": "",

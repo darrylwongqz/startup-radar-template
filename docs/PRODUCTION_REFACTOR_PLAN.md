@@ -76,7 +76,7 @@ Don't commit `uv.lock` AND a `requirements.txt`. Pick `uv.lock` as source of tru
 | 9 | ✅ GH Actions DB persistence via commit-to-data-branch | 1 day | **DONE Phase 7** — `daily.yml` rewrite + `data-branch-gc.yml` weekly force-push + `docs/ops/data-branch.md` bootstrap. Tag: `phase-7`. |
 | 10 | ✅ vcrpy fixtures + real source tests | 3-4 days | **DONE Phase 8** — `tests/unit/` + `tests/integration/` split; per-source cassette-backed tests (happy/empty/failure) for `rss`/`hackernews`/`sec_edgar`; Gmail via stubbed `service_factory`; `.github/workflows/ci.yml` PR gate (ruff + format-check + mypy + pytest w/ `--cov`); coverage config in `pyproject.toml`; `make test-unit|test-integration|test-record`. Tag: pending `phase-8`. |
 | 11 | ✅ Decompose `app.py` into `web/pages/` + cache wrappers | 2 days | **DONE Phase 9** — `startup_radar/web/{app,cache,state,lookup,connections}.py` + `pages/{1_dashboard,2_companies,3_jobs,4_deepdive,5_tracker}.py`; `@st.cache_data(ttl=60)` wrappers centralized in `web/cache.py`; session-state keys hoisted to `web/state.py` with import-time collision assertion; dead `from main import run` button replaced with promoted `startup_radar.cli.pipeline`; `startup-radar serve` repointed; `streamlit.testing.v1.AppTest` shell smoke test. `web/components/` deliberately skipped. Tag: pending `phase-9`. |
-| 12 | Storage class + `PRAGMA user_version` migrator (NOT alembic) | 1 day | |
+| 12 | ✅ Storage class + `PRAGMA user_version` migrator (NOT alembic) | 1 day | **DONE Phase 10** — `database.py` retired via `git mv` → `startup_radar/storage/sqlite.py`; `SqliteStorage` single-connection class (WAL, `check_same_thread=False`, writes in `with self._conn:`); homegrown `apply_pending` migrator over `NNNN_<slug>.sql` files with strict-ascending filename validation; `0001_initial.sql` is idempotent over pre-Phase-10 DBs (every `CREATE … IF NOT EXISTS`); `Storage` Protocol in `storage/base.py` + `load_storage(cfg)` factory; `Source.fetch` signature now `(cfg, storage=None)` — only `gmail.py` reads storage for dedup; `@st.cache_resource` wraps `get_storage()` in `web/cache.py`; 11 new tests (7 migrator + 4 SqliteStorage smoke). Alembic explicitly rejected per `CRITIQUE_APPENDIX.md` §4. Tag: pending `phase-10`. |
 | 13 | structlog + retries + per-source failure counters | 1 day | |
 | 14 | Dockerfile (single image, optional) | 0.5 day | |
 | 15 | MkDocs site (optional) | 1 day | |
@@ -225,11 +225,11 @@ startup_radar/
     normalize.py            # company-name canonical form
     dates.py
   filters.py
-  storage/
+  storage/                  # ✅ DONE Phase 10 — `git mv database.py → storage/sqlite.py`
     base.py                 # Storage Protocol
-    sqlite.py               # current database.py, refactored
-    postgres.py             # optional alternative
-    migrations/             # alembic
+    sqlite.py               # SqliteStorage (single connection, WAL, writes in `with self._conn:`)
+    migrator.py             # homegrown `apply_pending` over PRAGMA user_version; alembic rejected per CRITIQUE_APPENDIX §4
+    migrations/             # NNNN_<slug>.sql — 0001_initial.sql is the baseline
   sinks/
     sheets.py
     notion.py               # future
@@ -310,10 +310,7 @@ Still open (Phase 13): secrets via `pydantic-settings` from `.env`. No current e
 - `web/state.py` — kills the `key="ap_company"` collisions noted at `app.py:702`
 
 ### 3.5 Storage layer + migrations
-- Wrap raw `sqlite3` in a thin `Storage` class. One connection per process, WAL, `check_same_thread=False`. Currently `database.py:20-23` opens new connection per call across 33 functions.
-- Add **alembic** for migrations. Bumping schema today requires manual SQL.
-- Optional SQLAlchemy 2.x **Core** (not full ORM — keep it light) for type-safe queries.
-- `STARTUP_RADAR_DB_URL=sqlite:///… | postgres://…` swappable. Postgres unblocks the GH-Actions persistence problem and enables team usage.
+- ✅ **DONE Phase 10** — homegrown `PRAGMA user_version` migrator over numbered `.sql` files; alembic rejected per `CRITIQUE_APPENDIX.md` §4; SQLAlchemy rejected per §11; Postgres dropped per §12. `SqliteStorage` holds one `sqlite3.Connection` per process, WAL, `check_same_thread=False`; writes wrap `with self._conn:` per `.claude/rules/storage.md` bullet 2. `STARTUP_RADAR_DB_URL` env var deferred — `cfg.output.sqlite.path` covers the single knob this tool needs.
 
 ### 3.6 Centralize parsing
 `_AMOUNT_RE` + `_STAGE_RE` duplicated in `rss.py:16`, `hackernews.py:16`, `sec_edgar.py`, `deepdive.py`. Move to `parsing/funding.py`. Add `parse_amount("$2.5M") -> 2_500_000` with tests — current regex is lossy (no number returned).

@@ -143,8 +143,13 @@ class TestGmailFetchStubbed:
         return cfg
 
     def test_gmail_fetch_happy_path(
-        self, gmail_cfg: AppConfig, monkeypatch: pytest.MonkeyPatch
+        self,
+        gmail_cfg: AppConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
     ) -> None:
+        from startup_radar.storage.sqlite import SqliteStorage
+
         fake = _build_fake_service(
             labels=[{"id": "L1", "name": "funding-news"}],
             messages=[{"id": "m1"}, {"id": "m2"}],
@@ -160,25 +165,32 @@ class TestGmailFetchStubbed:
             },
         )
         monkeypatch.setattr(GmailSource, "service_factory", lambda self: fake)
-        monkeypatch.setattr("database.is_processed", lambda *a, **k: False)
-        monkeypatch.setattr("database.mark_processed", lambda *a, **k: None)
+        storage = SqliteStorage(tmp_path / "gmail.db")
+        storage.migrate_to_latest()
 
-        out = GmailSource().fetch(gmail_cfg)
+        out = GmailSource().fetch(gmail_cfg, storage=storage)
         companies = {s.company_name for s in out}
         assert "Anthropic" in companies
         assert "Cohere" in companies
+        # Second fetch should find nothing new — dedup path
+        assert GmailSource().fetch(gmail_cfg, storage=storage) == []
+        storage.close()
 
     def test_gmail_fetch_missing_label_returns_empty(
         self,
         gmail_cfg: AppConfig,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
+        tmp_path,
     ) -> None:
+        from startup_radar.storage.sqlite import SqliteStorage
+
         fake = _build_fake_service(labels=[], messages=[], message_bodies={})
         monkeypatch.setattr(GmailSource, "service_factory", lambda self: fake)
-        monkeypatch.setattr("database.is_processed", lambda *a, **k: False)
-        monkeypatch.setattr("database.mark_processed", lambda *a, **k: None)
+        storage = SqliteStorage(tmp_path / "gmail.db")
+        storage.migrate_to_latest()
         caplog.set_level(logging.WARNING, logger="startup_radar.sources.gmail")
 
-        assert GmailSource().fetch(gmail_cfg) == []
+        assert GmailSource().fetch(gmail_cfg, storage=storage) == []
         assert any("label_missing" in r.message for r in caplog.records)
+        storage.close()

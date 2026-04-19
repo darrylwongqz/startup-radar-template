@@ -43,7 +43,7 @@ class HackerNewsSource(Source):
         except requests.RequestException as e:
             return (False, f"Algolia unreachable: {e.__class__.__name__}")
 
-    def fetch(self, cfg: AppConfig) -> list[Startup]:
+    def fetch(self, cfg: AppConfig, storage=None) -> list[Startup]:
         hn_cfg = cfg.sources.hackernews
         if not hn_cfg.enabled:
             return []

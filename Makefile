@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-unit test-integration test-record lint format format-check typecheck ci serve run doctor clean
+.PHONY: help install install-dev test test-unit test-integration test-record lint format format-check typecheck ci serve run doctor db-migrate clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS=":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -46,6 +46,9 @@ doctor:  ## Quick environment check (Phase 4 will replace with `startup-radar do
 	@uv run python --version
 	@test -f config.yaml && echo "config.yaml: ok" || echo "config.yaml: MISSING (copy from config.example.yaml)"
 	@test -f startup_radar.db && echo "DB exists" || echo "DB not yet created"
+
+db-migrate:  ## Apply pending SQLite migrations (safe to re-run; idempotent)
+	uv run python -c "from startup_radar.config import load_config; from startup_radar.storage import load_storage; s = load_storage(load_config()); print(f'user_version={s.user_version()}'); s.close()"
 
 clean:  ## Remove build/cache artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache build dist *.egg-info

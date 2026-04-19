@@ -20,11 +20,15 @@ from __future__ import annotations
 import base64
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from startup_radar.config import AppConfig
 from startup_radar.models import Startup
 from startup_radar.parsing.funding import AMOUNT_RE, COMPANY_INLINE_RE, STAGE_RE
 from startup_radar.sources.base import Source
+
+if TYPE_CHECKING:
+    from startup_radar.storage import Storage
 
 # Repo-root locations preserved (credentials/token still live at the project root,
 # not inside the package). Phase 4+ may relocate to ~/.config/startup-radar/.
@@ -128,13 +132,16 @@ class GmailSource(Source):
             return (False, "token.json missing — run `startup-radar run` once to auth")
         return (True, "credentials + token present")
 
-    def fetch(self, cfg: AppConfig) -> list[Startup]:
+    def fetch(self, cfg: AppConfig, storage: Storage | None = None) -> list[Startup]:
         gmail_cfg = cfg.sources.gmail
         if not gmail_cfg.enabled:
             return []
 
-        # Function-scope import: database stays at repo root until Phase 12.
-        import database
+        if storage is None:
+            log.warning(
+                "source.storage_missing",
+                extra={"source": self.name, "detail": "dedup disabled without storage"},
+            )
 
         try:
             service = self.service_factory()
@@ -179,7 +186,7 @@ class GmailSource(Source):
 
         for msg_meta in messages:
             msg_id = msg_meta["id"]
-            if database.is_processed("gmail", msg_id):
+            if storage is not None and storage.is_processed("gmail", msg_id):
                 continue
 
             try:
@@ -198,5 +205,6 @@ class GmailSource(Source):
             startups.extend(_parse_body(body, subject))
             new_ids.append(msg_id)
 
-        database.mark_processed("gmail", new_ids)
+        if storage is not None and new_ids:
+            storage.mark_processed("gmail", new_ids)
         return startups

@@ -4,17 +4,21 @@ Two tiers of intro signal:
   Tier 1 — direct connections at the target company
   Tier 2 — connections at the target company's investors (requires a
            DeepDive report to have extracted investor names first)
+
+Callers pass a ``Storage`` (typically the dashboard-cached ``get_storage()``).
 """
+
+from __future__ import annotations
 
 import csv
 from pathlib import Path
 
 import pandas as pd
 
-import database
+from startup_radar.storage import Storage
 
 
-def import_from_csv(csv_path: str) -> int:
+def import_from_csv(storage: Storage, csv_path: str) -> int:
     """Import a LinkedIn Connections.csv export. Returns count imported."""
     path = Path(csv_path)
     if not path.exists():
@@ -31,16 +35,16 @@ def import_from_csv(csv_path: str) -> int:
 
     reader = csv.DictReader(lines[header_idx:])
     rows = [row for row in reader if row.get("First Name") or row.get("Last Name")]
-    return database.import_connections(rows)
+    return storage.import_connections(rows)
 
 
-def tier1_intros(company_name: str) -> pd.DataFrame:
+def tier1_intros(storage: Storage, company_name: str) -> pd.DataFrame:
     """Direct connections working at the target company."""
-    return database.search_connections_by_company(company_name)
+    return storage.search_connections_by_company(company_name)
 
 
-def tier2_intros(investor_names: list[str]) -> pd.DataFrame:
+def tier2_intros(storage: Storage, investor_names: list[str]) -> pd.DataFrame:
     """Connections at the target company's investor firms."""
     if not investor_names:
         return pd.DataFrame()
-    return database.search_connections_by_companies(investor_names)
+    return storage.search_connections_by_companies(investor_names)

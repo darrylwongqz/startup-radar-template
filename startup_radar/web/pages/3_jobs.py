@@ -10,9 +10,10 @@ from datetime import datetime
 
 import streamlit as st
 
-import database
 from startup_radar.web import state
-from startup_radar.web.cache import load_data
+from startup_radar.web.cache import get_storage, load_data
+
+storage = get_storage()
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 STATUS_OPTIONS = ["", "Interested", "Not Interested", "Applied", "Wishlist"]
@@ -23,7 +24,7 @@ df_startups, df_jobs = load_data()
 def _get_connections_for_companies(company_names):
     result = {}
     for name in company_names:
-        conns = database.search_connections_by_company(name)
+        conns = storage.search_connections_by_company(name)
         if not conns.empty:
             parts = []
             for _, c in conns.iterrows():
@@ -38,7 +39,7 @@ def _get_connections_for_companies(company_names):
 
 def _add_job_connections_col(frame):
     frame = frame.copy()
-    if database.get_connections_count() == 0:
+    if storage.get_connections_count() == 0:
         frame["Connections"] = ""
         return frame
     conn_map = _get_connections_for_companies(frame["Company"].tolist())
@@ -75,7 +76,7 @@ if st.session_state.get(state.JOB_SHOW_ADD):
         elif not ar_role.strip():
             st.error("Role Title is required.")
         else:
-            inserted = database.insert_job_matches(
+            inserted = storage.insert_job_matches(
                 [
                     {
                         "company_name": company_name,
@@ -128,7 +129,7 @@ def _persist_job_changes(original_df, edited_df):
         if idx not in original_df.index:
             continue
         if edited_df.loc[idx, "\U0001f5d1\ufe0f"]:
-            database.delete_job_match(original_df.loc[idx, "Company"], original_df.loc[idx, "Role"])
+            storage.delete_job_match(original_df.loc[idx, "Company"], original_df.loc[idx, "Role"])
             changed = True
             continue
         old = original_df.loc[idx, "Status"]
@@ -136,12 +137,12 @@ def _persist_job_changes(original_df, edited_df):
         if old != new:
             company = original_df.loc[idx, "Company"]
             role = original_df.loc[idx, "Role"]
-            database.update_job_status(company, role, new)
+            storage.update_job_status(company, role, new)
             if new == "Applied":
-                ts = database.get_tracker_status(company)
+                ts = storage.get_tracker_status(company)
                 if not ts:
-                    database.upsert_tracker_status(company, "Applied", role, "")
-                    database.insert_activity(
+                    storage.upsert_tracker_status(company, "Applied", role, "")
+                    storage.insert_activity(
                         {
                             "company_name": company,
                             "role_title": role,
