@@ -45,6 +45,7 @@ dev-dependencies = [
     "ruff>=0.5",
     "mypy>=1.10",
     "vcrpy>=6.0",
+    "pytest-recording>=0.13.4",
 ]
 
 [tool.setuptools]
@@ -94,7 +95,25 @@ files = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers --cov=startup_radar --cov-report=term-missing --cov-report=xml"
 markers = [
     "integration: requires network or external services",
+    "vcr: cassette-backed test (see tests/fixtures/cassettes/)",
+]
+
+[tool.coverage.run]
+source = ["startup_radar"]
+omit = [
+    "startup_radar/cli.py",
+    "startup_radar/research/deepdive.py",
+]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
 ]

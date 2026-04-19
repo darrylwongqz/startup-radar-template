@@ -80,6 +80,7 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 - `parse_amount_musd("$2.5M") -> 2.5` from `startup_radar/parsing/funding.py` is the canonical amount parser — `startup_radar/filters.py` uses it (the duplicate `_parse_amount_musd` retired in Phase 5).
 - CLI entry-point is registered via `[project.scripts]` in `pyproject.toml` and the `startup_radar.cli:app` shim — `uv sync --all-extras` refreshes it after edits to `cli.py` are not needed (editable install), but adding/removing commands does require a re-sync to refresh the `startup-radar` script wrapper.
 - Version is derived by `setuptools-scm` from the git tag history (`phase-*` tags yield dev-style versions; `fallback_version = "0.1.0"` for source tarballs).
+- vcrpy cassettes live in `tests/fixtures/cassettes/<source>/`. `CI=1` sets `record_mode=none` (missing cassette → test fails loud). Locally `record_mode=once` records on first run. Re-record by deleting the yaml + rerunning the test. EDGAR cassettes scrub User-Agent to `startup-radar-test`; don't commit a real email.
 
 ## @import references
 For source-author conventions: @.claude/rules/sources.md

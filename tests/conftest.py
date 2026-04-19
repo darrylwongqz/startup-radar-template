@@ -1,13 +1,44 @@
-"""Shared pytest fixtures for Phase 6 CLI tests."""
+"""Shared pytest fixtures — Phase 6 `fake_repo` + Phase 8 vcr config."""
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+CASSETTE_DIR = Path(__file__).resolve().parent / "fixtures" / "cassettes"
+
+
+@pytest.fixture(scope="session")
+def vcr_config() -> dict:
+    """Global vcrpy config. Scrubs identity/secret headers on record.
+
+    CI=1 flips `record_mode` to `none` — a missing cassette fails the test
+    loudly rather than silently hitting the network. Locally the default is
+    `once`: record on first run, replay thereafter.
+    """
+    return {
+        "filter_headers": [
+            ("authorization", "REDACTED"),
+            ("cookie", "REDACTED"),
+            ("user-agent", "startup-radar-test"),
+            ("x-api-key", "REDACTED"),
+        ],
+        "filter_query_parameters": [("key", "REDACTED"), ("api_key", "REDACTED")],
+        "record_mode": "none" if os.environ.get("CI") else "once",
+        "decode_compressed_response": True,
+    }
+
+
+@pytest.fixture
+def vcr_cassette_dir(request: pytest.FixtureRequest) -> str:
+    """One cassette subdir per source: tests/fixtures/cassettes/<source>/."""
+    module = Path(request.node.fspath).stem
+    source = module.replace("test_source_", "")
+    return str(CASSETTE_DIR / source)
 
 
 @pytest.fixture

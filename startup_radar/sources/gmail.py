@@ -113,6 +113,10 @@ class GmailSource(Source):
     name = "Gmail"
     enabled_key = "gmail"
 
+    def service_factory(self):
+        """Hookpoint for tests; returns the real Gmail API client in production."""
+        return _get_service()
+
     def healthcheck(self, cfg: AppConfig, *, network: bool = False) -> tuple[bool, str]:
         # Filesystem-only even under --network; Phase 13 will pair this with
         # a proactive token refresh via secrets.py. Until then, leaving the
@@ -133,7 +137,7 @@ class GmailSource(Source):
         import database
 
         try:
-            service = _get_service()
+            service = self.service_factory()
         except Exception as e:
             log.warning("source.fetch_failed", extra={"source": self.name, "err": str(e)})
             return []

@@ -10,7 +10,7 @@ from startup_radar.config import AppConfig
 from startup_radar.filters import StartupFilter
 from startup_radar.models import Startup
 
-EXAMPLE = Path(__file__).resolve().parent.parent / "config.example.yaml"
+EXAMPLE = Path(__file__).resolve().parents[2] / "config.example.yaml"
 
 
 def _cfg() -> AppConfig:

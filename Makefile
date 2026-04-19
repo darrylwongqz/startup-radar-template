@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test lint format format-check typecheck ci serve run doctor clean
+.PHONY: help install install-dev test test-unit test-integration test-record lint format format-check typecheck ci serve run doctor clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS=":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -10,6 +10,17 @@ install-dev: install  ## Alias for install (dev deps included by default)
 
 test:  ## Run pytest
 	uv run pytest
+
+test-unit:  ## Run only fast unit tests (no cassettes)
+	uv run pytest tests/unit/
+
+test-integration:  ## Run only cassette-backed source tests
+	uv run pytest tests/integration/
+
+test-record:  ## Re-record all cassettes (deletes existing, hits network)
+	@read -p "This deletes all cassettes and hits the network. Continue? [y/N] " ok && [ "$$ok" = "y" ] || exit 1
+	rm -rf tests/fixtures/cassettes/*/
+	uv run pytest tests/integration/
 
 lint:  ## Run ruff check
 	uv run ruff check .

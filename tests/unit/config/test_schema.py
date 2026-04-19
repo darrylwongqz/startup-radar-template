@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from startup_radar.config import AppConfig, ConfigError, load_config
 
-EXAMPLE = Path(__file__).resolve().parents[2] / "config.example.yaml"
+EXAMPLE = Path(__file__).resolve().parents[3] / "config.example.yaml"
 
 
 def _example() -> dict:

@@ -184,6 +184,30 @@ Each daily run writes a log file to `logs/`. If something isn't working, check t
 
 For real-time troubleshooting, run `startup-radar run` in your terminal — it prints each step as it happens.
 
+## Development
+
+### Running tests
+
+```bash
+make ci                                     # lint + format + typecheck + tests + coverage
+make test                                   # pytest only
+uv run pytest tests/unit/                   # fast — no cassettes
+uv run pytest tests/integration/            # cassette-backed source tests
+```
+
+#### Re-recording vcrpy cassettes
+
+Source tests replay network interactions from `tests/fixtures/cassettes/<source>/`. To re-record after an upstream response shape changes:
+
+```bash
+rm tests/fixtures/cassettes/<source>/<name>.yaml
+uv run pytest tests/integration/test_source_<source>.py::<test_name>
+```
+
+The `vcr_config` fixture records once (first run) and replays thereafter. In CI (`CI=1`), missing cassettes fail loudly rather than silently hitting the network.
+
+**SEC EDGAR** requires a `User-Agent` with contact info — set it via the `_USER_AGENT` constant in `startup_radar/sources/sec_edgar.py` before recording. The cassette scrubber replaces it with `startup-radar-test` on disk; do not commit a cassette containing a real email address.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
