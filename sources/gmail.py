@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import base64
 import re
-from datetime import datetime
 from pathlib import Path
 
 from models import Startup
@@ -27,12 +26,15 @@ from models import Startup
 BASE_DIR = Path(__file__).parent.parent
 CREDENTIALS_FILE = BASE_DIR / "credentials.json"
 TOKEN_FILE = BASE_DIR / "token.json"
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
 
 
 def _get_service():
-    from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
 
@@ -96,13 +98,15 @@ def _parse_body(text: str, subject: str) -> list[Startup]:
         amount = _AMOUNT_RE.search(snippet)
         stage = _STAGE_RE.search(snippet)
 
-        found.append(Startup(
-            company_name=m.group(1).strip(),
-            description=snippet.strip()[:300],
-            funding_stage=stage.group(0) if stage else "",
-            amount_raised=amount.group(0) if amount else "",
-            source=f"Gmail: {subject[:40]}",
-        ))
+        found.append(
+            Startup(
+                company_name=m.group(1).strip(),
+                description=snippet.strip()[:300],
+                funding_stage=stage.group(0) if stage else "",
+                amount_raised=amount.group(0) if amount else "",
+                source=f"Gmail: {subject[:40]}",
+            )
+        )
     return found
 
 
@@ -122,9 +126,16 @@ def fetch(gmail_cfg: dict) -> list[Startup]:
         print(f"  Gmail label '{label_name}' not found")
         return []
 
-    results = service.users().messages().list(
-        userId="me", labelIds=[label_id], maxResults=50,
-    ).execute()
+    results = (
+        service.users()
+        .messages()
+        .list(
+            userId="me",
+            labelIds=[label_id],
+            maxResults=50,
+        )
+        .execute()
+    )
     messages = results.get("messages", [])
 
     startups: list[Startup] = []
@@ -135,9 +146,16 @@ def fetch(gmail_cfg: dict) -> list[Startup]:
         if database.is_processed("gmail", msg_id):
             continue
 
-        msg = service.users().messages().get(
-            userId="me", id=msg_id, format="full",
-        ).execute()
+        msg = (
+            service.users()
+            .messages()
+            .get(
+                userId="me",
+                id=msg_id,
+                format="full",
+            )
+            .execute()
+        )
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
         subject = headers.get("Subject", "")
         body = _extract_body(msg.get("payload", {}))

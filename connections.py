@@ -20,7 +20,7 @@ def import_from_csv(csv_path: str) -> int:
     if not path.exists():
         raise FileNotFoundError(f"Connections CSV not found: {csv_path}")
 
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
 
     header_idx = 0

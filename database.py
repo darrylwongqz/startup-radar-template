@@ -1,13 +1,13 @@
 """SQLite database — generic startup + job + connections store."""
 
 import sqlite3
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 
-from models import Startup, JobMatch
+from models import JobMatch, Startup
 
 DB_PATH = Path(__file__).parent / "startup_radar.db"
 
@@ -122,6 +122,7 @@ def init_db() -> None:
 
 # ---------- dedup helpers ----------
 
+
 def get_existing_companies() -> set[str]:
     conn = _connect()
     try:
@@ -177,6 +178,7 @@ def mark_processed(source: str, item_ids: Iterable[str]) -> None:
 
 # ---------- inserts ----------
 
+
 def insert_startups(startups: list) -> int:
     if not startups:
         return 0
@@ -186,16 +188,27 @@ def insert_startups(startups: list) -> int:
         for s in startups:
             if isinstance(s, Startup):
                 values = (
-                    s.company_name, s.description, s.funding_stage, s.amount_raised,
-                    s.location, s.website, s.source, s.source_url,
-                    (s.date_found or datetime.now()).strftime("%Y-%m-%d"), "",
+                    s.company_name,
+                    s.description,
+                    s.funding_stage,
+                    s.amount_raised,
+                    s.location,
+                    s.website,
+                    s.source,
+                    s.source_url,
+                    (s.date_found or datetime.now()).strftime("%Y-%m-%d"),
+                    "",
                 )
             else:
                 values = (
-                    s["company_name"], s.get("description", ""),
-                    s.get("funding_stage", ""), s.get("amount_raised", ""),
-                    s.get("location", ""), s.get("website", ""),
-                    s.get("source", ""), s.get("source_url", ""),
+                    s["company_name"],
+                    s.get("description", ""),
+                    s.get("funding_stage", ""),
+                    s.get("amount_raised", ""),
+                    s.get("location", ""),
+                    s.get("website", ""),
+                    s.get("source", ""),
+                    s.get("source_url", ""),
                     s.get("date_found", datetime.now().strftime("%Y-%m-%d")),
                     s.get("status", ""),
                 )
@@ -225,16 +238,26 @@ def insert_job_matches(jobs: list) -> int:
         for j in jobs:
             if isinstance(j, JobMatch):
                 values = (
-                    j.company_name, j.company_description, j.role_title,
-                    j.location, j.url, j.priority, j.source,
-                    "", (j.date_found or datetime.now()).strftime("%Y-%m-%d"),
+                    j.company_name,
+                    j.company_description,
+                    j.role_title,
+                    j.location,
+                    j.url,
+                    j.priority,
+                    j.source,
+                    "",
+                    (j.date_found or datetime.now()).strftime("%Y-%m-%d"),
                 )
             else:
                 values = (
-                    j["company_name"], j.get("company_description", ""),
-                    j.get("role_title", ""), j.get("location", ""),
-                    j.get("url", ""), j.get("priority", ""),
-                    j.get("source", ""), j.get("status", ""),
+                    j["company_name"],
+                    j.get("company_description", ""),
+                    j.get("role_title", ""),
+                    j.get("location", ""),
+                    j.get("url", ""),
+                    j.get("priority", ""),
+                    j.get("source", ""),
+                    j.get("status", ""),
                     j.get("date_found", datetime.now().strftime("%Y-%m-%d")),
                 )
             try:
@@ -268,6 +291,7 @@ def update_startup_website(company_name: str, website: str) -> None:
 
 # ---------- read ----------
 
+
 def get_all_startups() -> pd.DataFrame:
     conn = _connect()
     try:
@@ -280,8 +304,15 @@ def get_all_startups() -> pd.DataFrame:
     finally:
         conn.close()
     df.columns = [
-        "Company Name", "Website", "Description", "Funding Stage",
-        "Amount Raised", "Location", "Source", "Date Found", "Status",
+        "Company Name",
+        "Website",
+        "Description",
+        "Funding Stage",
+        "Amount Raised",
+        "Location",
+        "Source",
+        "Date Found",
+        "Status",
     ]
     df["Website"] = df["Website"].fillna("")
     df["Website"] = df["Website"].apply(
@@ -303,8 +334,15 @@ def get_all_job_matches() -> pd.DataFrame:
     finally:
         conn.close()
     df.columns = [
-        "Company", "Company Description", "Role",
-        "Location", "Link", "Priority", "Status", "Date Found", "Notes",
+        "Company",
+        "Company Description",
+        "Role",
+        "Location",
+        "Link",
+        "Priority",
+        "Status",
+        "Date Found",
+        "Notes",
     ]
     df["Status"] = df["Status"].fillna("")
     df["Notes"] = df["Notes"].fillna("")
@@ -312,6 +350,7 @@ def get_all_job_matches() -> pd.DataFrame:
 
 
 # ---------- status updates ----------
+
 
 def update_startup_status(company_name: str, status: str) -> None:
     conn = _connect()
@@ -376,6 +415,7 @@ def delete_job_match(company_name: str, role_title: str) -> None:
 
 # ---------- activities ----------
 
+
 def insert_activity(activity: dict) -> int:
     conn = _connect()
     try:
@@ -412,7 +452,8 @@ def get_activities(company_name: str = None) -> pd.DataFrame:
                           date, follow_up_date, notes
                    FROM activities WHERE company_name = ? COLLATE NOCASE
                    ORDER BY date DESC, id DESC""",
-                conn, params=(company_name,),
+                conn,
+                params=(company_name,),
             )
         return pd.read_sql_query(
             """SELECT id, company_name, role_title, activity_type,
@@ -434,13 +475,15 @@ def get_overdue_followups(today: str) -> pd.DataFrame:
                FROM activities
                WHERE follow_up_date != '' AND follow_up_date <= ?
                ORDER BY follow_up_date ASC""",
-            conn, params=(today,),
+            conn,
+            params=(today,),
         )
     finally:
         conn.close()
 
 
 # ---------- tracker ----------
+
 
 def get_tracker_status(company_name: str) -> dict:
     conn = _connect()
@@ -474,7 +517,9 @@ def upsert_tracker_status(company_name: str, status: str, role: str = "", notes:
 def get_all_tracker_statuses() -> dict:
     conn = _connect()
     try:
-        rows = conn.execute("SELECT company_name, status, role, notes FROM tracker_status").fetchall()
+        rows = conn.execute(
+            "SELECT company_name, status, role, notes FROM tracker_status"
+        ).fetchall()
         return {r[0]: {"status": r[1], "role": r[2], "notes": r[3]} for r in rows}
     finally:
         conn.close()
@@ -483,8 +528,12 @@ def get_all_tracker_statuses() -> dict:
 def delete_tracker_entry(company_name: str) -> None:
     conn = _connect()
     try:
-        conn.execute("DELETE FROM tracker_status WHERE company_name = ? COLLATE NOCASE", (company_name,))
-        conn.execute("DELETE FROM activities WHERE company_name = ? COLLATE NOCASE", (company_name,))
+        conn.execute(
+            "DELETE FROM tracker_status WHERE company_name = ? COLLATE NOCASE", (company_name,)
+        )
+        conn.execute(
+            "DELETE FROM activities WHERE company_name = ? COLLATE NOCASE", (company_name,)
+        )
         conn.commit()
     finally:
         conn.close()
@@ -542,22 +591,39 @@ def get_tracker_summary() -> pd.DataFrame:
                 if a[5]:
                     notes_parts.append(f"{a[3]}: {a[5]}")
 
-            rows.append({
-                "Company": name, "Status": status, "Role": role,
-                "Contacts": ", ".join(contacts),
-                "Activities": " → ".join(timeline),
-                "Follow-up": next_followup,
-                "Notes": " | ".join(notes_parts),
-            })
+            rows.append(
+                {
+                    "Company": name,
+                    "Status": status,
+                    "Role": role,
+                    "Contacts": ", ".join(contacts),
+                    "Activities": " → ".join(timeline),
+                    "Follow-up": next_followup,
+                    "Notes": " | ".join(notes_parts),
+                }
+            )
 
-        return pd.DataFrame(rows) if rows else pd.DataFrame(
-            columns=["Company", "Status", "Role", "Contacts", "Activities", "Follow-up", "Notes"]
+        return (
+            pd.DataFrame(rows)
+            if rows
+            else pd.DataFrame(
+                columns=[
+                    "Company",
+                    "Status",
+                    "Role",
+                    "Contacts",
+                    "Activities",
+                    "Follow-up",
+                    "Notes",
+                ]
+            )
         )
     finally:
         conn.close()
 
 
 # ---------- connections ----------
+
 
 def import_connections(rows: list[dict]) -> int:
     conn = _connect()

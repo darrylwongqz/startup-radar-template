@@ -1,8 +1,7 @@
 """Core data models shared across sources, filters, and sinks."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -15,7 +14,7 @@ class Startup:
     website: str = ""
     source: str = ""
     source_url: str = ""
-    date_found: Optional[datetime] = None
+    date_found: datetime | None = None
 
 
 @dataclass
@@ -27,4 +26,4 @@ class JobMatch:
     url: str = ""
     priority: str = "Medium"
     source: str = ""
-    date_found: Optional[datetime] = None
+    date_found: datetime | None = None

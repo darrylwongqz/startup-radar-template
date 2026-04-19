@@ -8,17 +8,31 @@ import re
 import sys
 from datetime import datetime
 
+import database
 from config_loader import load_config
 from filters import StartupFilter
 from models import Startup
-import database
+
+_LEGAL_SUFFIX_RE = re.compile(
+    r"[\s,]+(inc|incorporated|llc|l\.l\.c|ltd|limited|corp|corporation|co|company|gmbh|sa|ag|plc|holdings|labs?|technologies|tech)\.?$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_company(name: str) -> str:
+    name = name.lower().strip()
+    prev = None
+    while prev != name:
+        prev = name
+        name = _LEGAL_SUFFIX_RE.sub("", name).strip()
+    return re.sub(r"[\s.\-&']+", "", name)
 
 
 def _dedup(startups: list[Startup]) -> list[Startup]:
     seen: set[str] = set()
     out: list[Startup] = []
     for s in startups:
-        key = re.sub(r"[\s.\-]+", "", s.company_name.lower())
+        key = _normalize_company(s.company_name)
         if key and key not in seen:
             seen.add(key)
             out.append(s)
@@ -48,6 +62,7 @@ def run() -> int:
     if rss_cfg.get("enabled"):
         print("\n[RSS] Fetching...")
         from sources import rss
+
         found = rss.fetch_all(rss_cfg.get("feeds", []))
         print(f"  {len(found)} candidate(s)")
         all_startups.extend(found)
@@ -57,6 +72,7 @@ def run() -> int:
     if hn_cfg.get("enabled"):
         print("\n[HN] Fetching...")
         from sources import hackernews
+
         found = hackernews.fetch(
             hn_cfg.get("queries", []),
             lookback_hours=int(hn_cfg.get("lookback_hours", 48)),
@@ -69,6 +85,7 @@ def run() -> int:
     if edgar_cfg.get("enabled"):
         print("\n[EDGAR] Fetching Form D filings...")
         from sources import sec_edgar
+
         found = sec_edgar.fetch(
             lookback_days=int(edgar_cfg.get("lookback_days", 7)),
             min_amount_musd=float(edgar_cfg.get("min_amount_musd", 5)),
@@ -83,6 +100,7 @@ def run() -> int:
         print("\n[Gmail] Fetching...")
         try:
             from sources import gmail as gmail_src
+
             found = gmail_src.fetch(gmail_cfg)
             print(f"  {len(found)} candidate(s)")
             all_startups.extend(found)
@@ -105,7 +123,8 @@ def run() -> int:
     existing = database.get_existing_companies()
     rejected = database.get_rejected_companies()
     fresh = [
-        s for s in deduped
+        s
+        for s in deduped
         if s.company_name.lower().strip() not in existing
         and s.company_name.lower().strip() not in rejected
     ]
@@ -128,6 +147,7 @@ def run() -> int:
     if sheets_cfg.get("enabled") and fresh:
         try:
             from sinks import google_sheets
+
             google_sheets.append_startups(sheets_cfg["sheet_id"], fresh)
             print(f"Wrote {len(fresh)} to Google Sheet")
         except Exception as e:

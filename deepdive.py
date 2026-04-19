@@ -15,10 +15,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import requests
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
 
 from config_loader import load_config
 
@@ -29,6 +28,7 @@ REPORTS_DIR.mkdir(exist_ok=True)
 def _web_search(query: str, max_results: int = 8) -> list[dict]:
     try:
         from duckduckgo_search import DDGS
+
         return list(DDGS().text(query, max_results=max_results))
     except Exception:
         return []
@@ -78,8 +78,11 @@ def _search_company(name: str) -> dict:
     if amt:
         info["total_raised"] = amt.group(0).strip()
 
-    for m in re.finditer(r"(Series\s+[A-F]\d?\+?|Seed|Pre-?Seed)\s*(?:round\s*)?(?:of\s*)?\$?([\d,.]+\s*[BM])?",
-                         text, re.IGNORECASE):
+    for m in re.finditer(
+        r"(Series\s+[A-F]\d?\+?|Seed|Pre-?Seed)\s*(?:round\s*)?(?:of\s*)?\$?([\d,.]+\s*[BM])?",
+        text,
+        re.IGNORECASE,
+    ):
         round_name = m.group(1).strip()
         round_amt = m.group(2).strip() if m.group(2) else ""
         if round_amt:
@@ -101,7 +104,9 @@ def _search_company(name: str) -> dict:
             if inv and 2 < len(inv) < 50 and inv not in info["investors"]:
                 info["investors"].append(inv)
 
-    loc = re.search(r"(?:based in|headquartered in)\s+([^,.\n]+(?:,\s*[A-Za-z. ]+)?)", text, re.IGNORECASE)
+    loc = re.search(
+        r"(?:based in|headquartered in)\s+([^,.\n]+(?:,\s*[A-Za-z. ]+)?)", text, re.IGNORECASE
+    )
     if loc:
         info["hq"] = loc.group(1).strip()
 
@@ -144,9 +149,9 @@ def _score_company(info: dict, cfg: dict) -> tuple[float, str, str]:
     else:
         scores["funding_stage"] = 4
 
-    locs = [l.lower() for l in targets.get("locations", [])]
+    locs = [loc.lower() for loc in targets.get("locations", [])]
     hq = info.get("hq", "").lower()
-    if locs and any(l in hq for l in locs):
+    if locs and any(loc in hq for loc in locs):
         scores["location"] = 9
     elif "remote" in " ".join(locs):
         scores["location"] = 7
@@ -197,7 +202,11 @@ def _score_company(info: dict, cfg: dict) -> tuple[float, str, str]:
         rationale_parts.append("hiring for your target roles")
     if user_bg:
         rationale_parts.append(f"given your background ({user_bg[:80]})")
-    rationale = ". ".join(rationale_parts) + "." if rationale_parts else "Moderate alignment with your criteria."
+    rationale = (
+        ". ".join(rationale_parts) + "."
+        if rationale_parts
+        else "Moderate alignment with your criteria."
+    )
 
     return final, label, rationale
 
@@ -283,8 +292,10 @@ def _generate_docx(info: dict, score: float, label: str, rationale: str, cfg: di
             doc.add_paragraph(f"- {c}")
 
     _section_header("Fit Score")
-    color = RGBColor(0x1A, 0x7A, 0x4A) if "STRONG" in label else (
-        RGBColor(0xB4, 0x53, 0x09) if "MODERATE" in label else RGBColor(0x99, 0x1B, 0x1B)
+    color = (
+        RGBColor(0x1A, 0x7A, 0x4A)
+        if "STRONG" in label
+        else (RGBColor(0xB4, 0x53, 0x09) if "MODERATE" in label else RGBColor(0x99, 0x1B, 0x1B))
     )
     p = doc.add_paragraph()
     run = p.add_run(f"{score}/10 — {label}")
@@ -298,7 +309,9 @@ def _generate_docx(info: dict, score: float, label: str, rationale: str, cfg: di
     if not info.get("investors"):
         doc.add_paragraph("- No investor information found — verify funding status independently.")
     if not info.get("hq"):
-        doc.add_paragraph("- Headquarters location not confirmed — may not match your target geography.")
+        doc.add_paragraph(
+            "- Headquarters location not confirmed — may not match your target geography."
+        )
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -325,10 +338,10 @@ def generate(company_name: str) -> Path:
     cfg = load_config()
     print(f"Researching {company_name}...")
     info = _search_company(company_name)
-    print(f"Scoring...")
+    print("Scoring...")
     score, label, rationale = _score_company(info, cfg)
     print(f"Score: {score}/10 — {label}")
-    print(f"Generating report...")
+    print("Generating report...")
     path = _generate_docx(info, score, label, rationale, cfg)
     if info.get("investors"):
         save_investors(company_name, info["investors"])
@@ -338,6 +351,6 @@ def generate(company_name: str) -> Path:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python deepdive.py \"Company Name\"")
+        print('Usage: python deepdive.py "Company Name"')
         sys.exit(1)
     generate(" ".join(sys.argv[1:]))

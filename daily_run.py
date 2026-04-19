@@ -42,6 +42,7 @@ def _setup_logging() -> logging.Logger:
 class _LogStream(io.TextIOBase):
     """Redirect `print()` output into the logger so main.py's step-by-step
     messages land in logs/YYYY-MM-DD.log alongside the structured entries."""
+
     encoding = "utf-8"
 
     def __init__(self, log: logging.Logger):
@@ -76,6 +77,7 @@ def main() -> int:
 
     try:
         from main import run
+
         rc = run()
         sys.stdout = old_stdout
         timer.cancel()

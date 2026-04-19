@@ -4,8 +4,8 @@ Free, no auth. Use it to fish for "raised Series X" threads.
 """
 
 import re
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Iterable
 
 import requests
 
@@ -67,14 +67,17 @@ def fetch(queries: Iterable[str], lookback_hours: int = 48) -> list[Startup]:
                 except Exception:
                     pass
 
-            results.append(Startup(
-                company_name=m.group(1).strip(),
-                description=title,
-                funding_stage=stage.group(0) if stage else "",
-                amount_raised=amount.group(0) if amount else "",
-                source="Hacker News",
-                source_url=hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
-                date_found=date_found,
-            ))
+            results.append(
+                Startup(
+                    company_name=m.group(1).strip(),
+                    description=title,
+                    funding_stage=stage.group(0) if stage else "",
+                    amount_raised=amount.group(0) if amount else "",
+                    source="Hacker News",
+                    source_url=hit.get("url")
+                    or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
+                    date_found=date_found,
+                )
+            )
 
     return results

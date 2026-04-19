@@ -1,6 +1,7 @@
 """Load and validate config.yaml."""
 
 from pathlib import Path
+
 import yaml
 
 BASE_DIR = Path(__file__).parent
@@ -20,7 +21,7 @@ def load_config() -> dict:
             "No config.yaml or config.example.yaml found. "
             "Run `claude` and invoke the /setup skill, or copy config.example.yaml to config.yaml."
         )
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
     _validate(cfg)
     return cfg

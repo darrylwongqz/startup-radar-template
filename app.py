@@ -10,6 +10,7 @@ import csv as _csv
 import json
 import re
 import subprocess
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -37,8 +38,13 @@ STATUS_OPTIONS = ["", "Interested", "Not Interested", "Applied", "Wishlist"]
 ACTIVITY_TYPES = ["Emailed", "Applied", "Called", "Meeting", "Follow-up", "Interview", "Note"]
 TRACKER_STATUS_OPTIONS = ["In Progress", "Applied", "Gone Cold"]
 APPLIED_STATUS_OPTIONS = [
-    "Applied", "Recruiter Screen", "Round 1 Interview", "Round 2 Interview",
-    "Round 3 Interview", "Case Study", "Rejected",
+    "Applied",
+    "Recruiter Screen",
+    "Round 1 Interview",
+    "Round 2 Interview",
+    "Round 3 Interview",
+    "Case Study",
+    "Rejected",
 ]
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
@@ -51,6 +57,7 @@ REPORTS_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 
 
+@st.cache_data(ttl=60)
 def load_data():
     return database.get_all_startups(), database.get_all_job_matches()
 
@@ -65,6 +72,7 @@ df_startups, df_jobs = load_data()
 def _lookup_company(name: str) -> dict:
     try:
         from duckduckgo_search import DDGS
+
         results = list(DDGS().text(f"{name} startup funding raised", max_results=5))
     except Exception:
         return {}
@@ -81,7 +89,9 @@ def _lookup_company(name: str) -> dict:
     stage = re.search(r"Series\s+[A-F]\d?\+?|Pre-[Ss]eed|Seed", snippets)
     if stage:
         info["funding_stage"] = stage.group(0).strip()
-    loc = re.search(r"(?:based in|headquartered in)\s+([^,.\n]+(?:,\s*[A-Za-z. ]+)?)", snippets, re.IGNORECASE)
+    loc = re.search(
+        r"(?:based in|headquartered in)\s+([^,.\n]+(?:,\s*[A-Za-z. ]+)?)", snippets, re.IGNORECASE
+    )
     if loc:
         info["location"] = loc.group(1).strip()
     return info
@@ -148,6 +158,7 @@ st.sidebar.divider()
 if st.sidebar.button("Run pipeline now"):
     with st.spinner("Running..."):
         from main import run
+
         run()
     st.success("Done")
     st.rerun()
@@ -162,15 +173,18 @@ if _li_last:
         _li_days_ago = (datetime.now() - _li_dt).days
         st.sidebar.caption(f"{_li_count} connections \u00b7 Updated {_li_dt.strftime('%b %d, %Y')}")
         if _li_days_ago > 30:
-            st.sidebar.warning("Connections may be stale \u2014 consider re-exporting from LinkedIn")
+            st.sidebar.warning(
+                "Connections may be stale \u2014 consider re-exporting from LinkedIn"
+            )
     except Exception:
         st.sidebar.caption(f"{_li_count} connections")
 else:
     st.sidebar.caption("Not yet uploaded")
 
-_li_file = st.sidebar.file_uploader("Upload CSV", type="csv", key="li_csv_upload", label_visibility="collapsed")
+_li_file = st.sidebar.file_uploader(
+    "Upload CSV", type="csv", key="li_csv_upload", label_visibility="collapsed"
+)
 if _li_file is not None:
-    import io as _io
     _content = _li_file.getvalue().decode("utf-8", errors="replace")
     _lines = _content.splitlines()
     _data_start = 0
@@ -316,16 +330,20 @@ elif page == "Companies":
             if not ac_name.strip():
                 st.error("Company Name is required.")
             else:
-                inserted = database.insert_startups([{
-                    "company_name": ac_name.strip(),
-                    "description": ac_desc.strip(),
-                    "funding_stage": ac_stage.strip(),
-                    "amount_raised": ac_amount.strip(),
-                    "location": ac_loc.strip(),
-                    "source": "Manual",
-                    "date_found": TODAY,
-                    "status": "",
-                }])
+                inserted = database.insert_startups(
+                    [
+                        {
+                            "company_name": ac_name.strip(),
+                            "description": ac_desc.strip(),
+                            "funding_stage": ac_stage.strip(),
+                            "amount_raised": ac_amount.strip(),
+                            "location": ac_loc.strip(),
+                            "source": "Manual",
+                            "date_found": TODAY,
+                            "status": "",
+                        }
+                    ]
+                )
                 if inserted:
                     st.session_state["show_add_company"] = False
                     st.session_state.pop("co_lookup", None)
@@ -337,21 +355,26 @@ elif page == "Companies":
     search = st.text_input("Search", placeholder="Company name or keyword...", key="co_search")
     filtered = df_startups.copy()
     if search:
-        mask = (
-            filtered["Company Name"].str.contains(search, case=False, na=False)
-            | filtered["Description"].str.contains(search, case=False, na=False)
-        )
+        mask = filtered["Company Name"].str.contains(search, case=False, na=False) | filtered[
+            "Description"
+        ].str.contains(search, case=False, na=False)
         filtered = filtered[mask]
 
     status_lower = filtered["Status"].str.strip().str.lower()
     wishlist = filtered[status_lower == "wishlist"]
     interested_co = filtered[status_lower == "interested"]
     not_interested = filtered[status_lower == "not interested"]
-    uncategorized = filtered[~status_lower.isin(["applied", "wishlist", "interested", "not interested"])]
+    uncategorized = filtered[
+        ~status_lower.isin(["applied", "wishlist", "interested", "not interested"])
+    ]
 
     _col_config = {
-        "Website": st.column_config.LinkColumn("Website", display_text=r"https?://(?:www\.)?([^/]+)", width="small"),
-        "Status": st.column_config.SelectboxColumn("Status", options=STATUS_OPTIONS, width="medium"),
+        "Website": st.column_config.LinkColumn(
+            "Website", display_text=r"https?://(?:www\.)?([^/]+)", width="small"
+        ),
+        "Status": st.column_config.SelectboxColumn(
+            "Status", options=STATUS_OPTIONS, width="medium"
+        ),
         "Connections": st.column_config.TextColumn("Connections", width="medium"),
         "\U0001f5d1\ufe0f": st.column_config.CheckboxColumn("\U0001f5d1\ufe0f", width="small"),
     }
@@ -374,12 +397,19 @@ elif page == "Companies":
                     ts = database.get_tracker_status(company)
                     if not ts:
                         database.upsert_tracker_status(company, "Applied", "", "")
-                        database.insert_activity({
-                            "company_name": company, "role_title": "",
-                            "activity_type": "Applied", "contact_name": "",
-                            "contact_title": "", "contact_email": "",
-                            "date": TODAY, "follow_up_date": "", "notes": "",
-                        })
+                        database.insert_activity(
+                            {
+                                "company_name": company,
+                                "role_title": "",
+                                "activity_type": "Applied",
+                                "contact_name": "",
+                                "contact_title": "",
+                                "contact_email": "",
+                                "date": TODAY,
+                                "follow_up_date": "",
+                                "notes": "",
+                            }
+                        )
                 changed = True
         return changed
 
@@ -390,8 +420,12 @@ elif page == "Companies":
         st.caption("No wishlisted companies yet.")
     else:
         edited_wl = st.data_editor(
-            _add_delete_col(_add_connections_col(wishlist)), column_config=_col_config,
-            hide_index=True, use_container_width=True, disabled=[], key="wishlist_editor",
+            _add_delete_col(_add_connections_col(wishlist)),
+            column_config=_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="wishlist_editor",
         )
         if _persist_company_changes(wishlist, edited_wl):
             _needs_rerun = True
@@ -403,8 +437,12 @@ elif page == "Companies":
         st.caption("No companies marked as interested yet.")
     else:
         edited_int = st.data_editor(
-            _add_delete_col(_add_connections_col(interested_co)), column_config=_col_config,
-            hide_index=True, use_container_width=True, disabled=[], key="interested_editor",
+            _add_delete_col(_add_connections_col(interested_co)),
+            column_config=_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="interested_editor",
         )
         if _persist_company_changes(interested_co, edited_int):
             _needs_rerun = True
@@ -416,8 +454,12 @@ elif page == "Companies":
             st.caption("No companies marked as not interested.")
         else:
             edited_ni = st.data_editor(
-                _add_delete_col(not_interested), column_config=_col_config,
-                hide_index=True, use_container_width=True, disabled=[], key="not_interested_editor",
+                _add_delete_col(not_interested),
+                column_config=_col_config,
+                hide_index=True,
+                use_container_width=True,
+                disabled=[],
+                key="not_interested_editor",
             )
             if _persist_company_changes(not_interested, edited_ni):
                 _needs_rerun = True
@@ -429,8 +471,12 @@ elif page == "Companies":
         st.caption("All companies have been categorized.")
     else:
         edited_unc = st.data_editor(
-            _add_delete_col(uncategorized), column_config=_col_config,
-            hide_index=True, use_container_width=True, disabled=[], key="uncategorized_editor",
+            _add_delete_col(uncategorized),
+            column_config=_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="uncategorized_editor",
         )
         if _persist_company_changes(uncategorized, edited_unc):
             _needs_rerun = True
@@ -461,22 +507,28 @@ elif page == "Job Matches":
             ar_priority = st.selectbox("Priority", ["", "High", "Medium", "Low"])
             ar_submit = st.form_submit_button("Add Role")
         if ar_submit:
-            company_name = ar_new_company.strip() if ar_company == "-- New company --" else ar_company
+            company_name = (
+                ar_new_company.strip() if ar_company == "-- New company --" else ar_company
+            )
             if not company_name:
                 st.error("Company is required.")
             elif not ar_role.strip():
                 st.error("Role Title is required.")
             else:
-                inserted = database.insert_job_matches([{
-                    "company_name": company_name,
-                    "company_description": ar_desc.strip(),
-                    "role_title": ar_role.strip(),
-                    "location": ar_loc.strip(),
-                    "url": ar_url.strip(),
-                    "priority": ar_priority,
-                    "status": "",
-                    "date_found": TODAY,
-                }])
+                inserted = database.insert_job_matches(
+                    [
+                        {
+                            "company_name": company_name,
+                            "company_description": ar_desc.strip(),
+                            "role_title": ar_role.strip(),
+                            "location": ar_loc.strip(),
+                            "url": ar_url.strip(),
+                            "priority": ar_priority,
+                            "status": "",
+                            "date_found": TODAY,
+                        }
+                    ]
+                )
                 if inserted:
                     st.session_state["show_add_role"] = False
                     st.rerun()
@@ -486,17 +538,18 @@ elif page == "Job Matches":
     job_search = st.text_input("Search", placeholder="Company name or role...", key="job_search")
     filtered_jobs = df_jobs.copy()
     if job_search:
-        mask = (
-            filtered_jobs["Role"].str.contains(job_search, case=False, na=False)
-            | filtered_jobs["Company"].str.contains(job_search, case=False, na=False)
-        )
+        mask = filtered_jobs["Role"].str.contains(job_search, case=False, na=False) | filtered_jobs[
+            "Company"
+        ].str.contains(job_search, case=False, na=False)
         filtered_jobs = filtered_jobs[mask]
 
     job_status_lower = filtered_jobs["Status"].str.strip().str.lower()
     wishlist_jobs = filtered_jobs[job_status_lower == "wishlist"]
     interested_jobs = filtered_jobs[job_status_lower == "interested"]
     ni_jobs = filtered_jobs[job_status_lower == "not interested"]
-    uncategorized_jobs = filtered_jobs[~job_status_lower.isin(["applied", "wishlist", "interested", "not interested"])]
+    uncategorized_jobs = filtered_jobs[
+        ~job_status_lower.isin(["applied", "wishlist", "interested", "not interested"])
+    ]
 
     display_cols = [c for c in filtered_jobs.columns if c != "Priority"]
 
@@ -510,7 +563,9 @@ elif page == "Job Matches":
         return frame
 
     _job_col_config = {
-        "Status": st.column_config.SelectboxColumn("Status", options=STATUS_OPTIONS, width="medium"),
+        "Status": st.column_config.SelectboxColumn(
+            "Status", options=STATUS_OPTIONS, width="medium"
+        ),
         "Link": st.column_config.LinkColumn("Link", display_text="Apply"),
         "Connections": st.column_config.TextColumn("Connections", width="medium"),
         "\U0001f5d1\ufe0f": st.column_config.CheckboxColumn("\U0001f5d1\ufe0f", width="small"),
@@ -522,7 +577,9 @@ elif page == "Job Matches":
             if idx not in original_df.index:
                 continue
             if edited_df.loc[idx, "\U0001f5d1\ufe0f"]:
-                database.delete_job_match(original_df.loc[idx, "Company"], original_df.loc[idx, "Role"])
+                database.delete_job_match(
+                    original_df.loc[idx, "Company"], original_df.loc[idx, "Role"]
+                )
                 changed = True
                 continue
             old = original_df.loc[idx, "Status"]
@@ -535,12 +592,19 @@ elif page == "Job Matches":
                     ts = database.get_tracker_status(company)
                     if not ts:
                         database.upsert_tracker_status(company, "Applied", role, "")
-                        database.insert_activity({
-                            "company_name": company, "role_title": role,
-                            "activity_type": "Applied", "contact_name": "",
-                            "contact_title": "", "contact_email": "",
-                            "date": TODAY, "follow_up_date": "", "notes": "",
-                        })
+                        database.insert_activity(
+                            {
+                                "company_name": company,
+                                "role_title": role,
+                                "activity_type": "Applied",
+                                "contact_name": "",
+                                "contact_title": "",
+                                "contact_email": "",
+                                "date": TODAY,
+                                "follow_up_date": "",
+                                "notes": "",
+                            }
+                        )
                 changed = True
         return changed
 
@@ -552,8 +616,11 @@ elif page == "Job Matches":
     else:
         edited = st.data_editor(
             _add_delete_col(_add_job_connections_col(wishlist_jobs[display_cols])),
-            column_config=_job_col_config, hide_index=True, use_container_width=True,
-            disabled=[], key="wl_jobs_editor",
+            column_config=_job_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="wl_jobs_editor",
         )
         if _persist_job_changes(wishlist_jobs, edited):
             _jobs_needs_rerun = True
@@ -566,8 +633,11 @@ elif page == "Job Matches":
     else:
         edited = st.data_editor(
             _add_delete_col(_add_job_connections_col(interested_jobs[display_cols])),
-            column_config=_job_col_config, hide_index=True, use_container_width=True,
-            disabled=[], key="int_jobs_editor",
+            column_config=_job_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="int_jobs_editor",
         )
         if _persist_job_changes(interested_jobs, edited):
             _jobs_needs_rerun = True
@@ -580,8 +650,11 @@ elif page == "Job Matches":
         else:
             edited = st.data_editor(
                 _add_delete_col(ni_jobs[display_cols]),
-                column_config=_job_col_config, hide_index=True, use_container_width=True,
-                disabled=[], key="ni_jobs_editor",
+                column_config=_job_col_config,
+                hide_index=True,
+                use_container_width=True,
+                disabled=[],
+                key="ni_jobs_editor",
             )
             if _persist_job_changes(ni_jobs, edited):
                 _jobs_needs_rerun = True
@@ -594,8 +667,11 @@ elif page == "Job Matches":
     else:
         edited = st.data_editor(
             _add_delete_col(_add_job_connections_col(uncategorized_jobs[display_cols])),
-            column_config=_job_col_config, hide_index=True, use_container_width=True,
-            disabled=[], key="unc_jobs_editor",
+            column_config=_job_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="unc_jobs_editor",
         )
         if _persist_job_changes(uncategorized_jobs, edited):
             _jobs_needs_rerun = True
@@ -613,7 +689,9 @@ elif page == "Company DeepDive":
     st.caption("Generate a one-page research brief for any company")
 
     if st.button("+ Add Company", key="add_company_dd_btn"):
-        st.session_state["show_add_company_dd"] = not st.session_state.get("show_add_company_dd", False)
+        st.session_state["show_add_company_dd"] = not st.session_state.get(
+            "show_add_company_dd", False
+        )
         st.session_state.pop("dd_lookup", None)
         st.session_state.pop("dd_lookup_v", None)
 
@@ -644,16 +722,20 @@ elif page == "Company DeepDive":
             if not dd_name.strip():
                 st.error("Company Name is required.")
             else:
-                inserted = database.insert_startups([{
-                    "company_name": dd_name.strip(),
-                    "description": dd_desc.strip(),
-                    "funding_stage": dd_stage.strip(),
-                    "amount_raised": dd_amount.strip(),
-                    "location": dd_loc.strip(),
-                    "source": "Manual",
-                    "date_found": TODAY,
-                    "status": "",
-                }])
+                inserted = database.insert_startups(
+                    [
+                        {
+                            "company_name": dd_name.strip(),
+                            "description": dd_desc.strip(),
+                            "funding_stage": dd_stage.strip(),
+                            "amount_raised": dd_amount.strip(),
+                            "location": dd_loc.strip(),
+                            "source": "Manual",
+                            "date_found": TODAY,
+                            "status": "",
+                        }
+                    ]
+                )
                 if inserted:
                     st.session_state["show_add_company_dd"] = False
                     st.session_state.pop("dd_lookup", None)
@@ -676,7 +758,8 @@ elif page == "Company DeepDive":
                 with open(report, "rb") as f:
                     col_b.download_button(
                         label="Download Research Brief",
-                        data=f, file_name=report.name,
+                        data=f,
+                        file_name=report.name,
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     )
             elif st.session_state.get("generating") == selected:
@@ -701,9 +784,12 @@ elif page == "Company DeepDive":
                     elapsed = int(time.time() - start)
                     pct = min(elapsed / 60.0, 0.95)
                     stages = [
-                        (0.0, "Starting research..."), (0.1, "Searching for company info..."),
-                        (0.25, "Gathering funding data..."), (0.45, "Analyzing competitors..."),
-                        (0.65, "Scoring company fit..."), (0.8, "Generating report..."),
+                        (0.0, "Starting research..."),
+                        (0.1, "Searching for company info..."),
+                        (0.25, "Gathering funding data..."),
+                        (0.45, "Analyzing competitors..."),
+                        (0.65, "Scoring company fit..."),
+                        (0.8, "Generating report..."),
                     ]
                     label = stages[0][1]
                     for threshold, stage_label in stages:
@@ -718,7 +804,9 @@ elif page == "Company DeepDive":
                     proc = subprocess.Popen(
                         [sys.executable or "python", "deepdive.py", selected],
                         cwd=str(PROJECT_DIR),
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
                     )
                     st.session_state["generating"] = selected
                     st.session_state["gen_proc"] = proc
@@ -733,7 +821,9 @@ elif page == "Company DeepDive":
 
         if st.session_state.get("show_warm_intros") == selected:
             if database.get_connections_count() == 0:
-                st.warning("No LinkedIn connections uploaded. Use the sidebar to upload your connections CSV.")
+                st.warning(
+                    "No LinkedIn connections uploaded. Use the sidebar to upload your connections CSV."
+                )
             else:
                 with st.spinner(f"Searching connections for intros to {selected}..."):
                     tier1 = database.search_connections_by_company(selected)
@@ -748,10 +838,14 @@ elif page == "Company DeepDive":
                     elif report.exists():
                         try:
                             from docx import Document as DocxDocument
+
                             doc = DocxDocument(str(report))
                             full_text = "\n".join(p.text for p in doc.paragraphs)
-                            for m in re.finditer(r"(?:led by|investors?\s+include|backed by)\s+([^.]+)",
-                                                 full_text, re.IGNORECASE):
+                            for m in re.finditer(
+                                r"(?:led by|investors?\s+include|backed by)\s+([^.]+)",
+                                full_text,
+                                re.IGNORECASE,
+                            ):
                                 for inv in re.split(r",\s*|\s+and\s+", m.group(1)):
                                     inv = inv.strip().rstrip(".")
                                     if inv and 2 < len(inv) < 50 and inv not in investor_names:
@@ -759,7 +853,11 @@ elif page == "Company DeepDive":
                         except Exception:
                             pass
 
-                    tier2 = database.search_connections_by_companies(investor_names) if investor_names else pd.DataFrame()
+                    tier2 = (
+                        database.search_connections_by_companies(investor_names)
+                        if investor_names
+                        else pd.DataFrame()
+                    )
                     if not tier2.empty and not tier1.empty:
                         tier2 = tier2[~tier2["url"].isin(tier1["url"])]
 
@@ -773,19 +871,23 @@ elif page == "Company DeepDive":
                             if url in hidden:
                                 continue
                             name = f"{c['first_name']} {c['last_name']}".strip()
-                            intro_rows.append({
-                                "Tier": tier_label,
-                                "Name": name,
-                                "Position": c.get("position", ""),
-                                "Company": c.get("company", ""),
-                                "LinkedIn": url,
-                                "Action": "",
-                            })
+                            intro_rows.append(
+                                {
+                                    "Tier": tier_label,
+                                    "Name": name,
+                                    "Position": c.get("position", ""),
+                                    "Company": c.get("company", ""),
+                                    "LinkedIn": url,
+                                    "Action": "",
+                                }
+                            )
 
                 st.divider()
                 if not intro_rows:
                     if not investor_names:
-                        st.info(f"No direct connections at {selected}. Generate a DeepDive report to unlock investor-based intros.")
+                        st.info(
+                            f"No direct connections at {selected}. Generate a DeepDive report to unlock investor-based intros."
+                        )
                     else:
                         st.info(f"No connections found related to {selected}.")
                 else:
@@ -794,10 +896,16 @@ elif page == "Company DeepDive":
                     edited_intros = st.data_editor(
                         _intro_df,
                         column_config={
-                            "LinkedIn": st.column_config.LinkColumn("LinkedIn", display_text="Profile", width="small"),
-                            "Action": st.column_config.SelectboxColumn("Action", options=["", "Save to Tracker", "Hide"], width="small"),
+                            "LinkedIn": st.column_config.LinkColumn(
+                                "LinkedIn", display_text="Profile", width="small"
+                            ),
+                            "Action": st.column_config.SelectboxColumn(
+                                "Action", options=["", "Save to Tracker", "Hide"], width="small"
+                            ),
                         },
-                        hide_index=True, use_container_width=True, key="warm_intros_editor",
+                        hide_index=True,
+                        use_container_width=True,
+                        key="warm_intros_editor",
                     )
                     _intros_changed = False
                     for idx in edited_intros.index:
@@ -809,22 +917,28 @@ elif page == "Company DeepDive":
                             database.hide_intro(row["LinkedIn"], selected)
                             _intros_changed = True
                         elif action == "Save to Tracker":
-                            database.insert_activity({
-                                "company_name": selected, "role_title": "",
-                                "activity_type": "Note",
-                                "contact_name": row["Name"],
-                                "contact_title": f"{row['Position']} at {row['Company']}",
-                                "contact_email": "", "date": TODAY,
-                                "follow_up_date": "",
-                                "notes": f"Warm intro lead ({row['Tier']})",
-                            })
+                            database.insert_activity(
+                                {
+                                    "company_name": selected,
+                                    "role_title": "",
+                                    "activity_type": "Note",
+                                    "contact_name": row["Name"],
+                                    "contact_title": f"{row['Position']} at {row['Company']}",
+                                    "contact_email": "",
+                                    "date": TODAY,
+                                    "follow_up_date": "",
+                                    "notes": f"Warm intro lead ({row['Tier']})",
+                                }
+                            )
                             _intros_changed = True
                     if _intros_changed:
                         st.rerun()
 
     st.divider()
     st.subheader("Past Reports")
-    existing_reports = sorted(REPORTS_DIR.glob("*_Research_Brief.docx"), key=lambda p: p.stat().st_mtime, reverse=True)
+    existing_reports = sorted(
+        REPORTS_DIR.glob("*_Research_Brief.docx"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
     if not existing_reports:
         st.caption("No reports generated yet. Select a company above to create one.")
     else:
@@ -835,9 +949,13 @@ elif page == "Company DeepDive":
             col1.markdown(f"**{display_name}**")
             col2.caption(f"Generated: {generated}")
             with open(rpt, "rb") as f:
-                col3.download_button(label="Download", data=f, file_name=rpt.name,
-                                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                     key=f"dl_{rpt.stem}")
+                col3.download_button(
+                    label="Download",
+                    data=f,
+                    file_name=rpt.name,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"dl_{rpt.stem}",
+                )
 
 
 # ===================================================================
@@ -867,17 +985,19 @@ elif page == "Application Tracker":
             if not act_company:
                 st.error("Company is required.")
             else:
-                database.insert_activity({
-                    "company_name": act_company,
-                    "role_title": act_role.strip(),
-                    "activity_type": act_type,
-                    "contact_name": act_contact.strip(),
-                    "contact_title": act_title.strip(),
-                    "contact_email": act_email.strip(),
-                    "date": act_date.strftime("%Y-%m-%d"),
-                    "follow_up_date": act_followup.strftime("%Y-%m-%d") if act_followup else "",
-                    "notes": act_notes.strip(),
-                })
+                database.insert_activity(
+                    {
+                        "company_name": act_company,
+                        "role_title": act_role.strip(),
+                        "activity_type": act_type,
+                        "contact_name": act_contact.strip(),
+                        "contact_title": act_title.strip(),
+                        "contact_email": act_email.strip(),
+                        "date": act_date.strftime("%Y-%m-%d"),
+                        "follow_up_date": act_followup.strftime("%Y-%m-%d") if act_followup else "",
+                        "notes": act_notes.strip(),
+                    }
+                )
                 st.session_state["show_add_activity"] = False
                 st.rerun()
 
@@ -888,11 +1008,13 @@ elif page == "Application Tracker":
         _is_overdue = row["follow_up_date"] < TODAY
         _contact = f" \u2014 {row['contact_name']}" if row.get("contact_name") else ""
         _role = f" \u00b7 {row['role_title']}" if row.get("role_title") else ""
-        _reminders.append({
-            "icon": "\U0001f534" if _is_overdue else "\U0001f7e1",
-            "text": f"**{row['company_name']}**{_role}{_contact}",
-            "detail": f"Scheduled follow-up due: {row['follow_up_date']} \u00b7 {row.get('notes', '')}",
-        })
+        _reminders.append(
+            {
+                "icon": "\U0001f534" if _is_overdue else "\U0001f7e1",
+                "text": f"**{row['company_name']}**{_role}{_contact}",
+                "detail": f"Scheduled follow-up due: {row['follow_up_date']} \u00b7 {row.get('notes', '')}",
+            }
+        )
 
     _all_acts = database.get_activities()
     if not _all_acts.empty:
@@ -919,13 +1041,17 @@ elif page == "Application Tracker":
                     _contact = f" \u2014 {act['contact_name']}" if act.get("contact_name") else ""
                     icon = "\U0001f534" if bdays >= 5 else "\U0001f7e1"
                     urgency = f"{bdays} business days since last email"
-                    _has_scheduled = any(act["company_name"] in r.get("text", "") for r in _reminders)
+                    _has_scheduled = any(
+                        act["company_name"] in r.get("text", "") for r in _reminders
+                    )
                     if not _has_scheduled:
-                        _reminders.append({
-                            "icon": icon,
-                            "text": f"**{act['company_name']}**{_contact}",
-                            "detail": f"Last emailed: {act['date']} \u2014 {urgency}",
-                        })
+                        _reminders.append(
+                            {
+                                "icon": icon,
+                                "text": f"**{act['company_name']}**{_contact}",
+                                "detail": f"Last emailed: {act['date']} \u2014 {urgency}",
+                            }
+                        )
 
     if _reminders:
         st.subheader(f"Reminders ({len(_reminders)})")
@@ -935,9 +1061,23 @@ elif page == "Application Tracker":
 
     tracker_summary = database.get_tracker_summary()
     _activity_log_statuses = ["In Progress", "Gone Cold"]
-    _applied_tracker = tracker_summary[~tracker_summary["Status"].isin(_activity_log_statuses + ["Rejected"])].copy() if not tracker_summary.empty else pd.DataFrame()
-    _active_tracker = tracker_summary[tracker_summary["Status"].isin(_activity_log_statuses)].copy() if not tracker_summary.empty else pd.DataFrame()
-    _rejected_tracker = tracker_summary[tracker_summary["Status"] == "Rejected"].copy() if not tracker_summary.empty else pd.DataFrame()
+    _applied_tracker = (
+        tracker_summary[
+            ~tracker_summary["Status"].isin(_activity_log_statuses + ["Rejected"])
+        ].copy()
+        if not tracker_summary.empty
+        else pd.DataFrame()
+    )
+    _active_tracker = (
+        tracker_summary[tracker_summary["Status"].isin(_activity_log_statuses)].copy()
+        if not tracker_summary.empty
+        else pd.DataFrame()
+    )
+    _rejected_tracker = (
+        tracker_summary[tracker_summary["Status"] == "Rejected"].copy()
+        if not tracker_summary.empty
+        else pd.DataFrame()
+    )
 
     # Applied
     st.divider()
@@ -948,7 +1088,9 @@ elif page == "Application Tracker":
 
     if st.session_state.get("show_add_applied"):
         with st.form("add_applied_form"):
-            ap_company = st.selectbox("Company *", [""] + df_startups["Company Name"].tolist(), key="ap_company")
+            ap_company = st.selectbox(
+                "Company *", [""] + df_startups["Company Name"].tolist(), key="ap_company"
+            )
             ap_new = st.text_input("Or enter new company name")
             ap_role = st.text_input("Role Title *", key="ap_role")
             ap_status = st.selectbox("Status", APPLIED_STATUS_OPTIONS, key="ap_status")
@@ -964,29 +1106,47 @@ elif page == "Application Tracker":
             elif not ap_role.strip():
                 st.error("Role Title is required.")
             else:
-                database.insert_activity({
-                    "company_name": company_name, "role_title": ap_role.strip(),
-                    "activity_type": "Applied", "contact_name": ap_contact.strip(),
-                    "contact_title": ap_contact_title.strip(), "contact_email": "",
-                    "date": ap_date.strftime("%Y-%m-%d"), "follow_up_date": "",
-                    "notes": ap_notes.strip(),
-                })
-                database.upsert_tracker_status(company_name, ap_status, ap_role.strip(), ap_notes.strip())
+                database.insert_activity(
+                    {
+                        "company_name": company_name,
+                        "role_title": ap_role.strip(),
+                        "activity_type": "Applied",
+                        "contact_name": ap_contact.strip(),
+                        "contact_title": ap_contact_title.strip(),
+                        "contact_email": "",
+                        "date": ap_date.strftime("%Y-%m-%d"),
+                        "follow_up_date": "",
+                        "notes": ap_notes.strip(),
+                    }
+                )
+                database.upsert_tracker_status(
+                    company_name, ap_status, ap_role.strip(), ap_notes.strip()
+                )
                 existing_keys = database.get_existing_job_keys()
                 key = f"{company_name.lower().strip()}|{ap_role.strip().lower()}"
                 if key not in existing_keys:
-                    database.insert_job_matches([{
-                        "company_name": company_name, "company_description": "",
-                        "role_title": ap_role.strip(), "location": "", "url": "",
-                        "priority": "", "status": ap_status,
-                        "date_found": ap_date.strftime("%Y-%m-%d"),
-                    }])
+                    database.insert_job_matches(
+                        [
+                            {
+                                "company_name": company_name,
+                                "company_description": "",
+                                "role_title": ap_role.strip(),
+                                "location": "",
+                                "url": "",
+                                "priority": "",
+                                "status": ap_status,
+                                "date_found": ap_date.strftime("%Y-%m-%d"),
+                            }
+                        ]
+                    )
                 database.update_job_status(company_name, ap_role.strip(), ap_status)
                 st.session_state["show_add_applied"] = False
                 st.rerun()
 
     _applied_col_config = {
-        "Status": st.column_config.SelectboxColumn("Status", options=APPLIED_STATUS_OPTIONS, width="small"),
+        "Status": st.column_config.SelectboxColumn(
+            "Status", options=APPLIED_STATUS_OPTIONS, width="small"
+        ),
         "Notes": st.column_config.TextColumn("Notes", width="large"),
         "\U0001f5d1\ufe0f": st.column_config.CheckboxColumn("\U0001f5d1\ufe0f", width="small"),
     }
@@ -1005,7 +1165,11 @@ elif page == "Application Tracker":
             new_s = edited_df.loc[idx, "Status"] or ""
             new_r = edited_df.loc[idx, "Role"] or ""
             new_n = edited_df.loc[idx, "Notes"] or ""
-            if old_s != new_s or (original_df.loc[idx, "Role"] or "") != new_r or (original_df.loc[idx, "Notes"] or "") != new_n:
+            if (
+                old_s != new_s
+                or (original_df.loc[idx, "Role"] or "") != new_r
+                or (original_df.loc[idx, "Notes"] or "") != new_n
+            ):
                 database.upsert_tracker_status(company, new_s, new_r, new_n)
                 changed = True
         return changed
@@ -1016,8 +1180,12 @@ elif page == "Application Tracker":
         _applied_display = _applied_tracker.copy()
         _applied_display["\U0001f5d1\ufe0f"] = False
         edited = st.data_editor(
-            _applied_display, column_config=_applied_col_config,
-            hide_index=True, use_container_width=True, disabled=[], key="tracker_applied_editor",
+            _applied_display,
+            column_config=_applied_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="tracker_applied_editor",
         )
         if _persist_tracker(_applied_tracker, edited):
             st.rerun()
@@ -1027,11 +1195,15 @@ elif page == "Application Tracker":
     st.subheader("Activity Log")
 
     if st.button("+ Add Entry", key="add_activity_log_btn"):
-        st.session_state["show_add_activity_log"] = not st.session_state.get("show_add_activity_log", False)
+        st.session_state["show_add_activity_log"] = not st.session_state.get(
+            "show_add_activity_log", False
+        )
 
     if st.session_state.get("show_add_activity_log"):
         with st.form("add_activity_log_form"):
-            al_company = st.selectbox("Company *", [""] + df_startups["Company Name"].tolist(), key="al_company")
+            al_company = st.selectbox(
+                "Company *", [""] + df_startups["Company Name"].tolist(), key="al_company"
+            )
             al_new = st.text_input("Or enter new company name", key="al_new")
             al_role = st.text_input("Role Title", key="al_role")
             al_type = st.selectbox("Activity Type *", ACTIVITY_TYPES, key="al_type")
@@ -1047,14 +1219,19 @@ elif page == "Application Tracker":
             if not company_name:
                 st.error("Company is required.")
             else:
-                database.insert_activity({
-                    "company_name": company_name, "role_title": al_role.strip(),
-                    "activity_type": al_type, "contact_name": al_contact.strip(),
-                    "contact_title": al_contact_title.strip(), "contact_email": al_email.strip(),
-                    "date": al_date.strftime("%Y-%m-%d"),
-                    "follow_up_date": al_followup.strftime("%Y-%m-%d") if al_followup else "",
-                    "notes": al_notes.strip(),
-                })
+                database.insert_activity(
+                    {
+                        "company_name": company_name,
+                        "role_title": al_role.strip(),
+                        "activity_type": al_type,
+                        "contact_name": al_contact.strip(),
+                        "contact_title": al_contact_title.strip(),
+                        "contact_email": al_email.strip(),
+                        "date": al_date.strftime("%Y-%m-%d"),
+                        "follow_up_date": al_followup.strftime("%Y-%m-%d") if al_followup else "",
+                        "notes": al_notes.strip(),
+                    }
+                )
                 ts = database.get_tracker_status(company_name)
                 if not ts:
                     database.upsert_tracker_status(company_name, "In Progress", al_role.strip(), "")
@@ -1065,7 +1242,9 @@ elif page == "Application Tracker":
         st.caption("No activities logged yet. Click '+ Add Entry' to start tracking.")
     else:
         _tracker_col_config = {
-            "Status": st.column_config.SelectboxColumn("Status", options=TRACKER_STATUS_OPTIONS, width="small"),
+            "Status": st.column_config.SelectboxColumn(
+                "Status", options=TRACKER_STATUS_OPTIONS, width="small"
+            ),
             "Notes": st.column_config.TextColumn("Notes", width="large"),
             "\U0001f5d1\ufe0f": st.column_config.CheckboxColumn("\U0001f5d1\ufe0f", width="small"),
         }
@@ -1073,8 +1252,12 @@ elif page == "Application Tracker":
         _active_display = _active_tracker.copy()
         _active_display["\U0001f5d1\ufe0f"] = False
         edited = st.data_editor(
-            _active_display, column_config=_tracker_col_config,
-            hide_index=True, use_container_width=True, disabled=[], key="tracker_active_editor",
+            _active_display,
+            column_config=_tracker_col_config,
+            hide_index=True,
+            use_container_width=True,
+            disabled=[],
+            key="tracker_active_editor",
         )
         if _persist_tracker(_active_tracker, edited):
             st.rerun()
@@ -1091,14 +1274,20 @@ elif page == "Application Tracker":
             edited = st.data_editor(
                 _rej_display,
                 column_config={
-                    "Status": st.column_config.SelectboxColumn("Status", options=TRACKER_STATUS_OPTIONS, width="small"),
-                    "\U0001f5d1\ufe0f": st.column_config.CheckboxColumn("\U0001f5d1\ufe0f", width="small"),
+                    "Status": st.column_config.SelectboxColumn(
+                        "Status", options=TRACKER_STATUS_OPTIONS, width="small"
+                    ),
+                    "\U0001f5d1\ufe0f": st.column_config.CheckboxColumn(
+                        "\U0001f5d1\ufe0f", width="small"
+                    ),
                 },
-                hide_index=True, use_container_width=True, disabled=[], key="rejected_tracker_editor",
+                hide_index=True,
+                use_container_width=True,
+                disabled=[],
+                key="rejected_tracker_editor",
             )
             if _persist_tracker(_rejected_tracker, edited):
                 st.rerun()
 
 
 # Missing import for subprocess in DeepDive
-import sys

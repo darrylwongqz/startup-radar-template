@@ -9,8 +9,8 @@ EDGAR is unauthenticated but requires a User-Agent with contact info.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Iterable
 
 import requests
 
@@ -33,7 +33,7 @@ def fetch(
     start = end - timedelta(days=lookback_days)
 
     params = {
-        "q": "\"Form D\"",
+        "q": '"Form D"',
         "dateRange": "custom",
         "startdt": start.isoformat(),
         "enddt": end.isoformat(),
@@ -70,22 +70,24 @@ def fetch(
             except Exception:
                 pass
 
-        adsh = src.get("adsh", "")
         cik = (src.get("ciks") or [""])[0]
         url = (
             f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&type=D"
-            if cik else ""
+            if cik
+            else ""
         )
 
-        results.append(Startup(
-            company_name=company,
-            description="Form D filing (SEC EDGAR)",
-            funding_stage="",
-            amount_raised="",
-            location="",
-            source="SEC EDGAR",
-            source_url=url,
-            date_found=date_found,
-        ))
+        results.append(
+            Startup(
+                company_name=company,
+                description="Form D filing (SEC EDGAR)",
+                funding_stage="",
+                amount_raised="",
+                location="",
+                source="SEC EDGAR",
+                source_url=url,
+                date_found=date_found,
+            )
+        )
 
     return results

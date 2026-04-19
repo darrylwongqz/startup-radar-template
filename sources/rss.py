@@ -4,13 +4,18 @@ No authentication required. Works out of the box.
 """
 
 import re
+import socket
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Iterable
 
 import feedparser
 from bs4 import BeautifulSoup
 
 from models import Startup
+
+# feedparser has no per-call timeout; cap the underlying socket so a hung
+# feed can't block the daily run forever.
+socket.setdefaulttimeout(20)
 
 
 _AMOUNT_RE = re.compile(
@@ -37,8 +42,12 @@ def _extract_company(title: str) -> str:
     m = _COMPANY_SUBJECT_RE.match(title)
     if m:
         return m.group(1).strip()
-    parts = re.split(r"\s+(?:raises|secures|closes|lands|nabs|announces|picks up)\s+",
-                     title, maxsplit=1, flags=re.IGNORECASE)
+    parts = re.split(
+        r"\s+(?:raises|secures|closes|lands|nabs|announces|picks up)\s+",
+        title,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )
     if len(parts) == 2:
         return parts[0].strip()
     return ""
@@ -46,8 +55,17 @@ def _extract_company(title: str) -> str:
 
 def _is_funding_item(title: str, summary: str) -> bool:
     text = f"{title} {summary}".lower()
-    signals = ["raises", "raised", "funding", "series ", "seed round",
-               "closes $", "secures $", "nabs $", "lands $"]
+    signals = [
+        "raises",
+        "raised",
+        "funding",
+        "series ",
+        "seed round",
+        "closes $",
+        "secures $",
+        "nabs $",
+        "lands $",
+    ]
     return any(s in text for s in signals)
 
 
@@ -73,16 +91,18 @@ def fetch(feed_url: str, source_name: str) -> list[Startup]:
             except Exception:
                 date_found = None
 
-        results.append(Startup(
-            company_name=company,
-            description=summary[:300],
-            funding_stage=stage_match.group(0) if stage_match else "",
-            amount_raised=amount_match.group(0) if amount_match else "",
-            location="",
-            source=source_name,
-            source_url=entry.get("link", ""),
-            date_found=date_found,
-        ))
+        results.append(
+            Startup(
+                company_name=company,
+                description=summary[:300],
+                funding_stage=stage_match.group(0) if stage_match else "",
+                amount_raised=amount_match.group(0) if amount_match else "",
+                location="",
+                source=source_name,
+                source_url=entry.get("link", ""),
+                date_found=date_found,
+            )
+        )
     return results
 
 

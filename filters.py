@@ -2,7 +2,7 @@
 
 import re
 
-from models import Startup, JobMatch
+from models import JobMatch, Startup
 
 _STAGE_ORDER = {
     "pre-seed": 0,
@@ -52,9 +52,7 @@ class StartupFilter:
         self.min_stage = targets.get("min_stage", "any").lower()
         self.min_stage_rank = _stage_rank(self.min_stage) if self.min_stage != "any" else -1
         self.large_seed_threshold = float(targets.get("large_seed_threshold_musd", 50))
-        self._ind_patterns = [
-            re.compile(r"\b" + re.escape(k) + r"\b") for k in self.industries
-        ]
+        self._ind_patterns = [re.compile(r"\b" + re.escape(k) + r"\b") for k in self.industries]
 
     def passes(self, s: Startup) -> bool:
         return (
