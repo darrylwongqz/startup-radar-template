@@ -40,7 +40,7 @@ def test_round_trip(tmp_path: Path) -> None:
 def test_user_version_after_migrate(tmp_path: Path) -> None:
     s = SqliteStorage(tmp_path / "x.db")
     s.migrate_to_latest()
-    assert s.user_version() == 1
+    assert s.user_version() == 2
     assert s.migrate_to_latest() == []
     s.close()
 

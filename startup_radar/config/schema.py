@@ -83,6 +83,13 @@ class SourcesConfig(_Strict):
     gmail: GmailConfig = Field(default_factory=GmailConfig)
 
 
+# --- network --------------------------------------------------------------
+
+
+class NetworkConfig(_Strict):
+    timeout_seconds: int = 10
+
+
 # --- output ---------------------------------------------------------------
 
 
@@ -142,3 +149,4 @@ class AppConfig(_Strict):
     output: OutputConfig
     connections: ConnectionsConfig = Field(default_factory=ConnectionsConfig)
     deepdive: DeepDiveConfig = Field(default_factory=DeepDiveConfig)
+    network: NetworkConfig = Field(default_factory=NetworkConfig)

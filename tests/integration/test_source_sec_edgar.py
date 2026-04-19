@@ -59,6 +59,48 @@ def test_sec_edgar_http_500_logs_and_returns_empty(
     assert any("fetch_failed" in r.message for r in caplog.records)
 
 
+def test_sec_edgar_retries_then_succeeds(
+    edgar_cfg: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two TimeoutErrors then a 200 → retry helper drives fetch to completion."""
+    import requests
+
+    from startup_radar.sources import sec_edgar as edgar_module
+
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self) -> None: ...
+        def json(self) -> dict:
+            return {
+                "hits": {
+                    "hits": [
+                        {
+                            "_source": {
+                                "display_names": ["Acme Labs (CIK 00001)"],
+                                "ciks": ["00001"],
+                                "file_date": "2026-04-18",
+                            }
+                        }
+                    ]
+                }
+            }
+
+    def _flaky(*_a: object, **_kw: object) -> _Resp:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise requests.Timeout("transient")
+        return _Resp()
+
+    monkeypatch.setattr(edgar_module.requests, "get", _flaky)
+    out = SECEdgarSource().fetch(edgar_cfg)
+    assert calls["n"] == 3
+    assert len(out) == 1
+    assert out[0].company_name == "Acme Labs"
+
+
 def test_cassette_headers_scrubbed() -> None:
     """The recorded UA must not be the real developer's identity."""
     cassette_path = CASSETTE_DIR / "sec_edgar" / "test_sec_edgar_happy_path.yaml"

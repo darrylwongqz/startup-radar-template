@@ -22,16 +22,18 @@ Single-user Python tool that aggregates startup-funding signals from RSS, Hacker
 │   ├── config/{schema,loader}.py            # pydantic AppConfig (Phase 5) — single source of truth for config.yaml
 │   ├── parsing/{funding,normalize}.py       # AMOUNT_RE/STAGE_RE/COMPANY_*; normalize_company, dedup_key
 │   ├── research/deepdive.py                 # AI research brief generator (moved from root in Phase 4)
+│   ├── observability/logging.py             # structlog pipeline — configure_logging(json: bool) + get_logger(name) (Phase 11)
 │   ├── sources/                             # Source ABC + per-source subclasses
 │   │   ├── base.py                          # Source ABC: name, enabled_key, fetch(cfg, storage=None), healthcheck()
 │   │   ├── registry.py                      # SOURCES: dict[str, Source]
+│   │   ├── _retry.py                        # Phase 11 — 40-LOC retry helper wrapping network calls (3 attempts, 1/2/4 s backoff)
 │   │   └── {rss,hackernews,sec_edgar,gmail}.py
 │   ├── storage/                             # Phase 10 — `git mv database.py → storage/sqlite.py`
 │   │   ├── base.py                          # Storage Protocol — 33 methods (reads, writes, dedup, tracker, connections)
 │   │   ├── sqlite.py                        # SqliteStorage: one connection/process, WAL, writes in `with self._conn:`
 │   │   ├── migrator.py                      # apply_pending() — PRAGMA user_version walker; alembic rejected (CRITIQUE_APPENDIX §4)
 │   │   ├── __init__.py                      # load_storage(cfg) factory — single entry point
-│   │   └── migrations/0001_initial.sql      # baseline schema; idempotent via CREATE TABLE IF NOT EXISTS
+│   │   └── migrations/                      # 0001_initial.sql + 0002_runs_table.sql (Phase 11); idempotent via CREATE … IF NOT EXISTS
 │   └── web/                                 # Streamlit dashboard (split Phase 9)
 │       ├── app.py                           # ~80-line shell: page-config, config load, get_storage(), sidebar
 │       ├── cache.py                         # @st.cache_resource get_storage() + @st.cache_data(ttl=60) read wrappers
@@ -56,7 +58,7 @@ Target layout (Phase 10+) lives in `docs/PRODUCTION_REFACTOR_PLAN.md` §3.1.
 - **Must:** every source registers in `startup_radar/sources/registry.py`.
 - **Must:** funding regexes (`AMOUNT_RE`, `STAGE_RE`, `COMPANY_SUBJECT_RE`, `COMPANY_INLINE_RE`) live ONLY in `startup_radar/parsing/funding.py`. Never re-introduce duplicates per source.
 - **Must:** company-name normalization goes through `normalize_company` / `dedup_key` in `startup_radar/parsing/normalize.py`.
-- **Never:** `print()` outside `startup_radar/cli.py`, `startup_radar/research/deepdive.py`, or `tests/` — use `logging.getLogger(__name__)`.
+- **Never:** `print()` outside `startup_radar/cli.py`, `startup_radar/research/deepdive.py`, or `tests/` — use `from startup_radar.observability.logging import get_logger; log = get_logger(__name__)`.
 - **Never:** `os.getenv()` outside `startup_radar/config/` (Phase 13 adds `secrets.py` there for `.env` consumers).
 - **Never:** edit `credentials.json`, `token.json`, `.env`, `uv.lock`, or `*.db` files.
 - **Never:** reintroduce `requirements.txt` — `pyproject.toml` + `uv.lock` are authoritative since Phase 2.
@@ -95,6 +97,9 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 - vcrpy cassettes live in `tests/fixtures/cassettes/<source>/`. `CI=1` sets `record_mode=none` (missing cassette → test fails loud). Locally `record_mode=once` records on first run. Re-record by deleting the yaml + rerunning the test. EDGAR cassettes scrub User-Agent to `startup-radar-test`; don't commit a real email.
 - `SqliteStorage` holds **one** `sqlite3.Connection` for its lifetime (Phase 10). `check_same_thread=False` is required so Streamlit's thread pool can share reads; single-writer is still enforced because only the CLI pipeline or a user-triggered button writes. Never call `sqlite3.connect()` directly — go through `load_storage(cfg)` (CLI/tests) or `get_storage()` (dashboard, cached via `@st.cache_resource`). Every write wraps `with self._conn:` for atomic commit-or-rollback.
 - Schema changes = drop `NNNN_<slug>.sql` into `startup_radar/storage/migrations/` with the next integer prefix (migrator rejects gaps and bad filenames at load time). No down-migrations, no alembic — rollback is git-revert + restore from the backup tarball. Next `startup-radar run` (or `make db-migrate`) applies it.
+- Logging is structlog with the stdlib bridge (Phase 11). `configure_logging(json: bool)` is called exactly once — at CLI `@app.callback` and inside the dashboard shell. `CI=1` or `STARTUP_RADAR_LOG_JSON=1` flip it to JSON; locally it's a pretty `ConsoleRenderer`. In tests, `tests/conftest.py` autouse-configures it so `caplog.records` sees source warnings. Don't call `logging.basicConfig` anywhere; don't wipe root handlers — our handler is sentinel-tagged and swaps in place so pytest's `LogCaptureHandler` survives.
+- Source network calls go through `startup_radar.sources._retry.retry(fn, on=(...), context={...})` — three attempts, `(1, 2, 4)` s backoff, logs `retry.backoff` at WARNING on each. Sleep is `_retry._sleep` (a module-local alias of `time.sleep`); `conftest.py` autouse-monkeypatches that alias to a no-op so failure-path tests don't cost 7 s each. Do NOT monkeypatch `time.sleep` — it's a module reference and clobbering `.sleep` on it freezes Streamlit's AppTest poll loop.
+- Pipeline wraps each source in `try/except/finally` → `storage.record_run(key, started_at=..., ended_at=..., items_fetched=..., items_kept=..., error=..., user_version_at_run=...)`. `status` renders a `Per-source health:` block using `storage.last_run` + `storage.failure_streak`. `doctor` adds a `⚠ source.<key>.streak` row when failure_streak > 2 (does NOT increment failed checks — advisory only).
 
 ## @import references
 For source-author conventions: @.claude/rules/sources.md

@@ -88,7 +88,8 @@ def test_gap_rejected(tmp_path: Path) -> None:
 
 def test_initial_migration_is_idempotent_over_populated_db(tmp_path: Path) -> None:
     """Simulates a pre-Phase-10 DB (user_version=0, tables already exist).
-    0001_initial.sql must apply cleanly because every CREATE is IF NOT EXISTS.
+    Every migration's CREATE is IF NOT EXISTS, so applying the full set over
+    a populated DB is safe.
     """
     real_migrations = (
         Path(__file__).resolve().parents[2] / "startup_radar" / "storage" / "migrations"
@@ -102,6 +103,34 @@ def test_initial_migration_is_idempotent_over_populated_db(tmp_path: Path) -> No
         """
     )
     applied = apply_pending(conn, real_migrations)
-    assert applied == [1]
+    assert applied == [1, 2]
     (v,) = conn.execute("PRAGMA user_version").fetchone()
-    assert v == 1
+    assert v == 2
+
+
+def test_migrate_0001_to_0002_preserves_data(tmp_path: Path) -> None:
+    """Seed startups at user_version=1, then apply 0002; data must survive."""
+    real_migrations = (
+        Path(__file__).resolve().parents[2] / "startup_radar" / "storage" / "migrations"
+    )
+    conn = sqlite3.connect(":memory:")
+    # Apply 0001 only by pointing at a copy of just that file.
+    stage = tmp_path / "m1_only"
+    stage.mkdir()
+    (stage / "0001_initial.sql").write_text(
+        (real_migrations / "0001_initial.sql").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    apply_pending(conn, stage)
+    conn.execute("INSERT INTO startups (company_name) VALUES ('Seeded Co')")
+    conn.commit()
+
+    applied = apply_pending(conn, real_migrations)
+    assert applied == [2]
+    (v,) = conn.execute("PRAGMA user_version").fetchone()
+    assert v == 2
+    (n,) = conn.execute("SELECT COUNT(*) FROM startups").fetchone()
+    assert n == 1
+    # runs table now exists and is empty
+    (r,) = conn.execute("SELECT COUNT(*) FROM runs").fetchone()
+    assert r == 0

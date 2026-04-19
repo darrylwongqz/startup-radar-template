@@ -7,8 +7,9 @@ dep fails loud once at startup, not silently per click.
 
 from __future__ import annotations
 
-import logging
 import re
+
+from startup_radar.observability.logging import get_logger
 
 try:
     from duckduckgo_search import DDGS
@@ -17,7 +18,7 @@ try:
 except ImportError:
     _DDG_AVAILABLE = False
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def lookup_company(name: str) -> dict:
@@ -26,7 +27,7 @@ def lookup_company(name: str) -> dict:
     try:
         results = list(DDGS().text(f"{name} startup funding raised", max_results=5))
     except Exception as e:
-        log.warning("lookup.failed", extra={"company": name, "err": str(e)})
+        log.warning("lookup.failed", company=name, err=str(e))
         return {}
     if not results:
         return {}

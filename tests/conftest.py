@@ -8,8 +8,26 @@ from pathlib import Path
 
 import pytest
 
+from startup_radar.observability.logging import configure_logging
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CASSETTE_DIR = Path(__file__).resolve().parent / "fixtures" / "cassettes"
+
+
+@pytest.fixture(autouse=True)
+def _structlog_routes_through_stdlib() -> None:
+    """Ensure structlog emits via the stdlib root logger so pytest's caplog
+    sees records. Idempotent: our handler is sentinel-tagged so pytest's
+    `LogCaptureHandler` stays attached."""
+    configure_logging(json=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neutralize `sources._retry` backoff so tests that hit the retry path
+    don't burn seven seconds each. Monkeypatches the module-local `_sleep`
+    alias — replacing `time.sleep` here would clobber it process-wide."""
+    monkeypatch.setattr("startup_radar.sources._retry._sleep", lambda _s: None)
 
 
 @pytest.fixture(scope="session")

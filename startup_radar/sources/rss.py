@@ -5,7 +5,6 @@ No authentication required. Works out of the box.
 
 from __future__ import annotations
 
-import logging
 import re
 import socket
 from datetime import datetime
@@ -15,14 +14,16 @@ from bs4 import BeautifulSoup
 
 from startup_radar.config import AppConfig
 from startup_radar.models import Startup
+from startup_radar.observability.logging import get_logger
 from startup_radar.parsing.funding import AMOUNT_RE, COMPANY_SUBJECT_RE, STAGE_RE
+from startup_radar.sources._retry import retry
 from startup_radar.sources.base import Source
 
 # feedparser has no per-call timeout; cap the underlying socket so a hung
 # feed can't block the daily run forever.
 socket.setdefaulttimeout(20)
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _strip_html(html: str) -> str:
@@ -98,12 +99,17 @@ class RSSSource(Source):
             except Exception as e:
                 log.warning(
                     "source.fetch_failed",
-                    extra={"source": self.name, "feed": feed.name, "err": str(e)},
+                    source=self.name,
+                    feed=feed.name,
+                    err=str(e),
                 )
         return out
 
     def _fetch_one(self, feed_url: str, source_name: str) -> list[Startup]:
-        parsed = feedparser.parse(feed_url)
+        parsed = retry(
+            lambda: feedparser.parse(feed_url),
+            context={"source": self.name, "feed": source_name},
+        )
         results: list[Startup] = []
         for entry in parsed.entries:
             title = entry.get("title", "") or ""

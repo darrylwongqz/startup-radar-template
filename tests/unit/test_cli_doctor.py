@@ -66,3 +66,41 @@ def test_doctor_network_invokes_healthcheck(
     runner.invoke(app, ["doctor", "--network"])
     assert any(seen), "no healthchecks invoked"
     assert all(seen), "at least one healthcheck ran with network=False"
+
+
+def test_doctor_warns_on_failure_streak(fake_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """>2 consecutive failed runs surface as a ⚠ streak row. Exit stays 0-or-fail
+    driven by the other checks, never incremented by the streak warning itself."""
+    import yaml
+
+    from startup_radar.sources.registry import SOURCES
+    from startup_radar.storage.sqlite import SqliteStorage
+
+    cfg_path = fake_repo / "config.yaml"
+    data = yaml.safe_load(cfg_path.read_text())
+    data["sources"]["rss"]["enabled"] = True
+    cfg_path.write_text(yaml.safe_dump(data))
+
+    db = fake_repo / "startup_radar.db"
+    db.unlink()
+    s = SqliteStorage(db)
+    s.migrate_to_latest()
+    for i in range(3):
+        s.record_run(
+            "rss",
+            started_at=f"2026-04-1{i}T00:00:00",
+            ended_at=f"2026-04-1{i}T00:00:01",
+            items_fetched=0,
+            items_kept=0,
+            error="BoomError",
+            user_version_at_run=s.user_version(),
+        )
+    s.close()
+
+    # Stub healthchecks so they don't add their own ✗ that confuses the assertion.
+    for src in SOURCES.values():
+        monkeypatch.setattr(src, "healthcheck", lambda *_a, **_kw: (True, "stubbed"), raising=False)
+
+    result = runner.invoke(app, ["doctor"])
+    assert "source.rss.streak" in result.output
+    assert "3 consecutive failed runs" in result.output

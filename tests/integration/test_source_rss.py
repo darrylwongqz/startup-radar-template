@@ -100,3 +100,29 @@ def test_rss_fetch_exception_logs_and_returns_empty(
     out = RSSSource().fetch(rss_cfg)
     assert out == []
     assert any(r.name.endswith("rss") and "fetch_failed" in r.message for r in caplog.records)
+
+
+def test_rss_retries_then_succeeds(rss_cfg: AppConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+    """feedparser.parse fails twice then succeeds → retry helper unwraps it."""
+    calls = {"n": 0}
+    canned = _feed(
+        [
+            {
+                "title": "Acme raises $5M Series A",
+                "summary": "Acme raised $5M Series A.",
+                "link": "https://example.test/acme",
+            }
+        ]
+    )
+
+    def _flaky(_url: str) -> Any:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("transient")
+        return canned
+
+    monkeypatch.setattr(rss_module, "feedparser", type("M", (), {"parse": staticmethod(_flaky)}))
+    out = RSSSource().fetch(rss_cfg)
+    assert calls["n"] == 3
+    assert len(out) == 1
+    assert out[0].company_name == "Acme"

@@ -53,3 +53,42 @@ def test_hackernews_http_500_logs_and_returns_empty(
     caplog.set_level(logging.WARNING, logger="startup_radar.sources.hackernews")
     assert HackerNewsSource().fetch(hn_cfg) == []
     assert any("fetch_failed" in r.message for r in caplog.records)
+
+
+def test_hackernews_retries_then_succeeds(
+    hn_cfg: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two RequestExceptions then a 200 → retry unwraps to a populated fetch."""
+    import requests
+
+    from startup_radar.sources import hackernews as hn_module
+
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self) -> None: ...
+        def json(self) -> dict:
+            return {
+                "hits": [
+                    {
+                        "title": "Acme raises $3M Seed",
+                        "url": "https://example.test/acme",
+                        "created_at": "2026-04-19T00:00:00Z",
+                        "objectID": "1",
+                    }
+                ]
+            }
+
+    def _flaky(*_a: object, **_kw: object) -> _Resp:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise requests.ConnectionError("transient")
+        return _Resp()
+
+    monkeypatch.setattr(hn_module.requests, "get", _flaky)
+    out = HackerNewsSource().fetch(hn_cfg)
+    assert calls["n"] == 3
+    assert len(out) == 1
+    assert out[0].company_name == "Acme"

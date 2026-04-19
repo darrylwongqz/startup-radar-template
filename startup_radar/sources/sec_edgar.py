@@ -9,7 +9,6 @@ EDGAR is unauthenticated but requires a User-Agent with contact info.
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -17,6 +16,8 @@ import requests
 
 from startup_radar.config import AppConfig
 from startup_radar.models import Startup
+from startup_radar.observability.logging import get_logger
+from startup_radar.sources._retry import retry
 from startup_radar.sources.base import Source
 
 EDGAR_SEARCH_URL = "https://efts.sec.gov/LATEST/search-index"
@@ -27,7 +28,7 @@ EDGAR_HEADERS = {
     "Accept": "application/json",
 }
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class SECEdgarSource(Source):
@@ -75,12 +76,19 @@ class SECEdgarSource(Source):
         if sic_codes:
             params["sic"] = ",".join(sic_codes)
 
+        timeout = cfg.network.timeout_seconds
         try:
-            resp = requests.get(EDGAR_SEARCH_URL, params=params, headers=EDGAR_HEADERS, timeout=20)
+            resp = retry(
+                lambda: requests.get(
+                    EDGAR_SEARCH_URL, params=params, headers=EDGAR_HEADERS, timeout=timeout
+                ),
+                on=(requests.RequestException, TimeoutError),
+                context={"source": self.name},
+            )
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            log.warning("source.fetch_failed", extra={"source": self.name, "err": str(e)})
+            log.warning("source.fetch_failed", source=self.name, err=str(e))
             return []
 
         hits = data.get("hits", {}).get("hits", [])

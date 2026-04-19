@@ -21,6 +21,7 @@ dependencies = [
     "python-docx>=1.1.0",
     "typer>=0.12",
     "pydantic>=2.5",
+    "structlog>=24.0",
 ]
 
 [project.optional-dependencies]
@@ -55,6 +56,7 @@ packages = [
     "startup_radar.parsing",
     "startup_radar.research",
     "startup_radar.config",
+    "startup_radar.observability",
 ]
 py-modules = [
     "app",
@@ -91,6 +93,8 @@ files = [
     "startup_radar/parsing",
     "startup_radar/config",
     "startup_radar/filters.py",
+    "startup_radar/observability",
+    "startup_radar/sources/_retry.py",
 ]
 
 [tool.pytest.ini_options]

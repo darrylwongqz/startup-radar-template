@@ -194,3 +194,37 @@ class TestGmailFetchStubbed:
         assert GmailSource().fetch(gmail_cfg, storage=storage) == []
         assert any("label_missing" in r.message for r in caplog.records)
         storage.close()
+
+    def test_gmail_fetch_retries_on_labels_list(
+        self,
+        gmail_cfg: AppConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """labels().list().execute() throws twice then returns → retry wraps it."""
+        from startup_radar.storage.sqlite import SqliteStorage
+
+        fake = _build_fake_service(
+            labels=[{"id": "L1", "name": "funding-news"}],
+            messages=[],
+            message_bodies={},
+        )
+
+        calls = {"n": 0}
+        real_execute = fake.users.return_value.labels.return_value.list.return_value.execute
+
+        def _flaky_execute() -> dict:
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise ConnectionError("transient")
+            return real_execute.return_value
+
+        fake.users.return_value.labels.return_value.list.return_value.execute = _flaky_execute
+
+        monkeypatch.setattr(GmailSource, "service_factory", lambda self: fake)
+        storage = SqliteStorage(tmp_path / "gmail.db")
+        storage.migrate_to_latest()
+
+        assert GmailSource().fetch(gmail_cfg, storage=storage) == []
+        assert calls["n"] == 3
+        storage.close()

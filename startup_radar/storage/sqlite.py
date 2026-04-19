@@ -14,7 +14,6 @@ in ``startup_radar/storage/migrator.py``. Alembic explicitly rejected per
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 from collections.abc import Iterable
 from datetime import datetime
@@ -23,11 +22,12 @@ from pathlib import Path
 import pandas as pd
 
 from startup_radar.models import JobMatch, Startup
+from startup_radar.observability.logging import get_logger
 from startup_radar.storage.migrator import apply_pending
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class SqliteStorage:
@@ -40,11 +40,12 @@ class SqliteStorage:
     # --- schema ------------------------------------------------------------
 
     def migrate_to_latest(self) -> list[int]:
-        applied = apply_pending(self._conn, _MIGRATIONS_DIR, logger=log)
+        applied = apply_pending(self._conn, _MIGRATIONS_DIR)
         if applied:
             log.info(
                 "storage.migrated",
-                extra={"versions": applied, "path": str(self._path)},
+                versions=applied,
+                path=str(self._path),
             )
         return applied
 
@@ -518,3 +519,68 @@ class SqliteStorage:
             (company_name,),
         ).fetchall()
         return {r[0] for r in rows}
+
+    # --- runs / telemetry (Phase 11) ---------------------------------------
+
+    def record_run(
+        self,
+        source: str,
+        *,
+        started_at: str,
+        ended_at: str,
+        items_fetched: int,
+        items_kept: int,
+        error: str | None,
+        user_version_at_run: int,
+    ) -> int:
+        with self._conn:
+            cur = self._conn.execute(
+                """INSERT INTO runs
+                   (source, started_at, ended_at, items_fetched, items_kept,
+                    error, user_version_at_run)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    source,
+                    started_at,
+                    ended_at,
+                    items_fetched,
+                    items_kept,
+                    error,
+                    user_version_at_run,
+                ),
+            )
+            return int(cur.lastrowid or 0)
+
+    def last_run(self, source: str) -> dict | None:
+        row = self._conn.execute(
+            """SELECT id, source, started_at, ended_at, items_fetched, items_kept,
+                      error, user_version_at_run
+               FROM runs WHERE source = ? ORDER BY id DESC LIMIT 1""",
+            (source,),
+        ).fetchone()
+        if row is None:
+            return None
+        cols = (
+            "id",
+            "source",
+            "started_at",
+            "ended_at",
+            "items_fetched",
+            "items_kept",
+            "error",
+            "user_version_at_run",
+        )
+        return dict(zip(cols, row, strict=True))
+
+    def failure_streak(self, source: str) -> int:
+        """Count consecutive rows with error IS NOT NULL, newest-first, stop
+        at first success. Short-circuits — never reads past the streak+1."""
+        streak = 0
+        for (err,) in self._conn.execute(
+            "SELECT error FROM runs WHERE source = ? ORDER BY id DESC",
+            (source,),
+        ):
+            if err is None:
+                break
+            streak += 1
+        return streak

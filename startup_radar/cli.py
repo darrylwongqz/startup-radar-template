@@ -24,6 +24,18 @@ _MAX_SCHEDULED_RUNTIME_SEC = 15 * 60
 _LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
+def _json_logs() -> bool:
+    return os.getenv("STARTUP_RADAR_LOG_JSON") == "1" or os.getenv("CI") == "1"
+
+
+@app.callback()
+def _main() -> None:
+    """Configure structlog once per process."""
+    from startup_radar.observability.logging import configure_logging
+
+    configure_logging(json=_json_logs())
+
+
 def _repo_root() -> Path:
     """Repo root for resolving DB / config / logs. Tests monkeypatch this."""
     return Path(__file__).resolve().parent.parent
@@ -76,9 +88,12 @@ def pipeline() -> int:
     from startup_radar.config import load_config
     from startup_radar.filters import StartupFilter
     from startup_radar.models import Startup
+    from startup_radar.observability.logging import get_logger
     from startup_radar.parsing.normalize import dedup_key
     from startup_radar.sources.registry import SOURCES
     from startup_radar.storage import load_storage
+
+    log = get_logger(__name__)
 
     print("=" * 60)
     print("Startup Radar")
@@ -87,6 +102,7 @@ def pipeline() -> int:
 
     cfg = load_config()
     storage = load_storage(cfg)
+    uv_at_run = storage.user_version()
 
     try:
         all_startups: list[Startup] = []
@@ -95,7 +111,24 @@ def pipeline() -> int:
             if sub_cfg is None or not getattr(sub_cfg, "enabled", False):
                 continue
             print(f"\n[{source.name}] Fetching...")
-            found = source.fetch(cfg, storage=storage)
+            started_at = datetime.utcnow().isoformat()
+            err_repr: str | None = None
+            found: list[Startup] = []
+            try:
+                found = source.fetch(cfg, storage=storage)
+            except Exception as e:
+                err_repr = repr(e)
+                log.exception("source.unhandled", source=source.name)
+            finally:
+                storage.record_run(
+                    key,
+                    started_at=started_at,
+                    ended_at=datetime.utcnow().isoformat(),
+                    items_fetched=len(found),
+                    items_kept=len(found),
+                    error=err_repr,
+                    user_version_at_run=uv_at_run,
+                )
             print(f"  {len(found)} candidate(s)")
             all_startups.extend(found)
 
@@ -393,6 +426,9 @@ def _doctor(*, network: bool) -> int:
             except Exception as e:
                 checks.append(("✗", f"source.{key}", f"healthcheck raised: {e}"))
                 fails += 1
+            _, streak = _source_health(cfg, key)
+            if streak > 2:
+                checks.append(("⚠", f"source.{key}.streak", f"{streak} consecutive failed runs"))
 
     print("=" * 60)
     print(f"Startup Radar — doctor  ({'network' if network else 'fast'} mode)")
@@ -445,6 +481,7 @@ def _status() -> int:
 
     db_counts: dict[str, int | str] = {"startups": 0, "job_matches": 0, "connections": 0}
     db_size = "—"
+    cfg = None
     try:
         from startup_radar.config import load_config
 
@@ -472,7 +509,71 @@ def _status() -> int:
         f"DB rows:        startups={db_counts['startups']}  "
         f"job_matches={db_counts['job_matches']}  connections={db_counts['connections']}"
     )
+
+    if cfg is not None:
+        print()
+        print("Per-source health:")
+        for key in ("rss", "hackernews", "sec_edgar", "gmail"):
+            sub = getattr(cfg.sources, key, None)
+            if sub is None or not getattr(sub, "enabled", False):
+                print(f"  – {key:<12} (disabled)")
+                continue
+            lr, streak = _source_health(cfg, key)
+            age = _run_age(lr)
+            if streak > 2:
+                marker = "⚠"
+            elif lr and lr.get("error") is None:
+                marker = "✓"
+            else:
+                marker = "–"
+            failures = f"{streak} failures" if streak else "0 failures"
+            print(f"  {marker} {key:<12} last run {age}  |  {failures}")
     return 0
+
+
+def _source_health(cfg: object, source_key: str) -> tuple[dict | None, int]:
+    """Read last_run + failure_streak for a source. Swallows errors.
+
+    Resolves the sqlite path against `_repo_root()` when relative, mirroring
+    what `_status` does for the DB row counts. `load_storage` itself trusts
+    the caller's CWD, which doesn't hold for CLI helpers invoked from tests
+    (`fake_repo` monkeypatches `_repo_root`, not CWD).
+    """
+    from startup_radar.storage.sqlite import SqliteStorage
+
+    try:
+        db_path = Path(cfg.output.sqlite.path)  # type: ignore[attr-defined]
+        if not db_path.is_absolute():
+            db_path = _repo_root() / db_path
+        storage = SqliteStorage(db_path)
+        storage.migrate_to_latest()
+    except Exception:
+        return (None, 0)
+    try:
+        return (storage.last_run(source_key), storage.failure_streak(source_key))
+    except Exception:
+        return (None, 0)
+    finally:
+        try:
+            storage.close()
+        except Exception:
+            pass
+
+
+def _run_age(lr: dict | None) -> str:
+    if not lr:
+        return "never"
+    end = lr.get("ended_at") or lr.get("started_at")
+    if not end:
+        return "unknown"
+    try:
+        dt = datetime.fromisoformat(end)
+    except ValueError:
+        return "unknown"
+    age_s = datetime.utcnow().timestamp() - dt.timestamp()
+    if age_s < 0:
+        age_s = 0
+    return _format_age(age_s)
 
 
 def _format_age(seconds: float) -> str:

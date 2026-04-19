@@ -7,12 +7,15 @@ pragma after success. No down-migrations (``docs/CRITIQUE_APPENDIX.md`` §4).
 
 from __future__ import annotations
 
-import logging
 import re
 import sqlite3
 from pathlib import Path
 
+from startup_radar.observability.logging import get_logger
+
 _FILE_RE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
+
+log = get_logger(__name__)
 
 
 def _discover(migrations_dir: Path) -> list[tuple[int, Path]]:
@@ -31,10 +34,7 @@ def _discover(migrations_dir: Path) -> list[tuple[int, Path]]:
 def apply_pending(
     conn: sqlite3.Connection,
     migrations_dir: Path,
-    *,
-    logger: logging.Logger | None = None,
 ) -> list[int]:
-    log = logger or logging.getLogger(__name__)
     (current,) = conn.execute("PRAGMA user_version").fetchone()
     applied: list[int] = []
     for version, path in _discover(migrations_dir):
@@ -46,8 +46,8 @@ def apply_pending(
                 conn.executescript(sql)
                 conn.execute(f"PRAGMA user_version = {version}")
         except sqlite3.Error:
-            log.exception("migration.failed", extra={"version": version, "file": path.name})
+            log.exception("migration.failed", version=version, file=path.name)
             raise
-        log.info("migration.applied", extra={"version": version, "file": path.name})
+        log.info("migration.applied", version=version, file=path.name)
         applied.append(version)
     return applied

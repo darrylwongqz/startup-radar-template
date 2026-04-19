@@ -77,7 +77,7 @@ Don't commit `uv.lock` AND a `requirements.txt`. Pick `uv.lock` as source of tru
 | 10 | ✅ vcrpy fixtures + real source tests | 3-4 days | **DONE Phase 8** — `tests/unit/` + `tests/integration/` split; per-source cassette-backed tests (happy/empty/failure) for `rss`/`hackernews`/`sec_edgar`; Gmail via stubbed `service_factory`; `.github/workflows/ci.yml` PR gate (ruff + format-check + mypy + pytest w/ `--cov`); coverage config in `pyproject.toml`; `make test-unit|test-integration|test-record`. Tag: pending `phase-8`. |
 | 11 | ✅ Decompose `app.py` into `web/pages/` + cache wrappers | 2 days | **DONE Phase 9** — `startup_radar/web/{app,cache,state,lookup,connections}.py` + `pages/{1_dashboard,2_companies,3_jobs,4_deepdive,5_tracker}.py`; `@st.cache_data(ttl=60)` wrappers centralized in `web/cache.py`; session-state keys hoisted to `web/state.py` with import-time collision assertion; dead `from main import run` button replaced with promoted `startup_radar.cli.pipeline`; `startup-radar serve` repointed; `streamlit.testing.v1.AppTest` shell smoke test. `web/components/` deliberately skipped. Tag: pending `phase-9`. |
 | 12 | ✅ Storage class + `PRAGMA user_version` migrator (NOT alembic) | 1 day | **DONE Phase 10** — `database.py` retired via `git mv` → `startup_radar/storage/sqlite.py`; `SqliteStorage` single-connection class (WAL, `check_same_thread=False`, writes in `with self._conn:`); homegrown `apply_pending` migrator over `NNNN_<slug>.sql` files with strict-ascending filename validation; `0001_initial.sql` is idempotent over pre-Phase-10 DBs (every `CREATE … IF NOT EXISTS`); `Storage` Protocol in `storage/base.py` + `load_storage(cfg)` factory; `Source.fetch` signature now `(cfg, storage=None)` — only `gmail.py` reads storage for dedup; `@st.cache_resource` wraps `get_storage()` in `web/cache.py`; 11 new tests (7 migrator + 4 SqliteStorage smoke). Alembic explicitly rejected per `CRITIQUE_APPENDIX.md` §4. Tag: pending `phase-10`. |
-| 13 | structlog + retries + per-source failure counters | 1 day | |
+| 13 | ✅ structlog + retries + per-source failure counters | 1 day | **DONE Phase 11** — `startup_radar/observability/logging.py` (stdlib-bridged structlog, idempotent, sentinel-tagged handler keeps pytest's `caplog` attached); `startup_radar/sources/_retry.py` (~40 LOC, `(1,2,4) s` backoff, no `tenacity`/`backoff`); `0002_runs_table.sql` + `record_run` / `last_run` / `failure_streak`; `pipeline()` try/except/finally wraps each source with `record_run`; `status` renders `Per-source health:`; `doctor` surfaces `⚠ source.<key>.streak` when `failure_streak > 2` (advisory, exit stays driven by checks); `cfg.network.timeout_seconds=10` added. All `extra={}` kwargs flattened. Tag: pending `phase-11`. |
 | 14 | Dockerfile (single image, optional) | 0.5 day | |
 | 15 | MkDocs site (optional) | 1 day | |
 
@@ -329,14 +329,15 @@ Still open (Phase 13): secrets via `pydantic-settings` from `.env`. No current e
 ### 4.2 CI pipeline (`.github/workflows/ci.yml`)
 On PR: ruff, mypy, pytest, build wheel. Separate from `daily.yml` (cron job). Add **dependabot** + **pip-audit** + **gitleaks**.
 
-### 4.3 Observability
-- **structlog** with JSON in prod, pretty in dev. Replace 40+ `print()` calls in `main.py`+sources and the `_LogStream` hack at `daily_run.py:42-58`
-- Per-source counters: items fetched, items kept, errors, duration. Persist to a `runs` table; render last 30 days on a "System Health" dashboard page
-- Optional **Sentry** SDK gated behind `SENTRY_DSN`
+### 4.3 Observability ✅ Phase 11
+- **structlog** (stdlib-bridged, via `startup_radar/observability/logging.py`). JSON when `CI=1` or `STARTUP_RADAR_LOG_JSON=1`, pretty `ConsoleRenderer` locally. `configure_logging(json: bool)` is called once per process (CLI `@app.callback`, dashboard shell). Handler is sentinel-tagged so repeat calls swap in place without wiping pytest's `LogCaptureHandler` — `caplog.records` just works in tests.
+- Per-source counters persisted to a `runs` table (migration `0002_runs_table.sql`): `started_at`, `ended_at`, `items_fetched`, `items_kept`, `error`, `user_version_at_run`. `pipeline()` wraps each source in `try/except/finally` → `storage.record_run(...)`. `status` renders a `Per-source health:` block; `doctor` emits `⚠ source.<key>.streak` when `failure_streak > 2`.
+- Optional **Sentry** SDK (deferred) — would gate behind `SENTRY_DSN` via `Secrets(BaseSettings)` (see §4.7).
 
-### 4.4 Retries + timeouts
-- All HTTP via shared `httpx.Client` with `tenacity` retry decorator (3× exp backoff on 5xx/timeout/connection error) and explicit per-source timeouts
-- Circuit breaker per source: 3 consecutive failures → skip for 1 run, log warning to dashboard
+### 4.4 Retries + timeouts ✅ Phase 11 (partial)
+- Retry helper: `startup_radar/sources/_retry.py` — ~40 LOC, 3 attempts, `(1, 2, 4)` s backoff, fixed exception tuple per call site. Logs `retry.backoff` at WARNING. No `tenacity` / `backoff` (per `CRITIQUE_APPENDIX.md` §7). Sleep goes through a module-local `_sleep` alias so tests can monkeypatch it without clobbering `time.sleep` process-wide.
+- Per-source timeouts sourced from `cfg.network.timeout_seconds` (default `10`). Applied in RSS (`socket.setdefaulttimeout(20)` for feedparser), HN (`requests.get(..., timeout=...)`), EDGAR (same).
+- **Deferred:** shared `httpx.Client` migration and circuit-breaker semantics ("skip source for N runs after M failures") — the persistent `failure_streak` counter now exists, wiring it into `pipeline()` as a skip gate is a follow-up.
 
 ### 4.5 Rate limiting + politeness
 SEC EDGAR requires `User-Agent` w/ contact and ≤10 req/s — verify compliance. Add `aiolimiter` per source.

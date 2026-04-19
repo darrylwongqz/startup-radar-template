@@ -5,19 +5,20 @@ Free, no auth. Use it to fish for "raised Series X" threads.
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
 
 import requests
 
 from startup_radar.config import AppConfig
 from startup_radar.models import Startup
+from startup_radar.observability.logging import get_logger
 from startup_radar.parsing.funding import AMOUNT_RE, COMPANY_SUBJECT_RE, STAGE_RE
+from startup_radar.sources._retry import retry
 from startup_radar.sources.base import Source
 
 ALGOLIA_URL = "https://hn.algolia.com/api/v1/search_by_date"
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class HackerNewsSource(Source):
@@ -52,28 +53,35 @@ class HackerNewsSource(Source):
         lookback_hours = int(hn_cfg.lookback_hours)
         cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
         cutoff_ts = int(cutoff.timestamp())
+        timeout = cfg.network.timeout_seconds
 
         seen_titles: set[str] = set()
         results: list[Startup] = []
 
         for query in queries:
             try:
-                resp = requests.get(
-                    ALGOLIA_URL,
-                    params={
-                        "query": query,
-                        "tags": "story",
-                        "numericFilters": f"created_at_i>{cutoff_ts}",
-                        "hitsPerPage": 50,
-                    },
-                    timeout=15,
+                resp = retry(
+                    lambda q=query: requests.get(
+                        ALGOLIA_URL,
+                        params={
+                            "query": q,
+                            "tags": "story",
+                            "numericFilters": f"created_at_i>{cutoff_ts}",
+                            "hitsPerPage": 50,
+                        },
+                        timeout=timeout,
+                    ),
+                    on=(requests.RequestException, TimeoutError),
+                    context={"source": self.name, "query": query},
                 )
                 resp.raise_for_status()
                 hits = resp.json().get("hits", [])
             except Exception as e:
                 log.warning(
                     "source.fetch_failed",
-                    extra={"source": self.name, "query": query, "err": str(e)},
+                    source=self.name,
+                    query=query,
+                    err=str(e),
                 )
                 continue
 

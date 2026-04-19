@@ -18,13 +18,14 @@ actually subscribe to.
 from __future__ import annotations
 
 import base64
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from startup_radar.config import AppConfig
 from startup_radar.models import Startup
+from startup_radar.observability.logging import get_logger
 from startup_radar.parsing.funding import AMOUNT_RE, COMPANY_INLINE_RE, STAGE_RE
+from startup_radar.sources._retry import retry
 from startup_radar.sources.base import Source
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _get_service():
@@ -140,21 +141,25 @@ class GmailSource(Source):
         if storage is None:
             log.warning(
                 "source.storage_missing",
-                extra={"source": self.name, "detail": "dedup disabled without storage"},
+                source=self.name,
+                detail="dedup disabled without storage",
             )
 
         try:
             service = self.service_factory()
         except Exception as e:
-            log.warning("source.fetch_failed", extra={"source": self.name, "err": str(e)})
+            log.warning("source.fetch_failed", source=self.name, err=str(e))
             return []
 
         label_name = gmail_cfg.label
 
         try:
-            labels_resp = service.users().labels().list(userId="me").execute()
+            labels_resp = retry(
+                lambda: service.users().labels().list(userId="me").execute(),
+                context={"source": self.name, "op": "labels.list"},
+            )
         except Exception as e:
-            log.warning("source.fetch_failed", extra={"source": self.name, "err": str(e)})
+            log.warning("source.fetch_failed", source=self.name, err=str(e))
             return []
 
         label_id = None
@@ -165,19 +170,23 @@ class GmailSource(Source):
         if not label_id:
             log.warning(
                 "source.label_missing",
-                extra={"source": self.name, "label": label_name},
+                source=self.name,
+                label=label_name,
             )
             return []
 
         try:
-            results = (
-                service.users()
-                .messages()
-                .list(userId="me", labelIds=[label_id], maxResults=50)
-                .execute()
+            results = retry(
+                lambda: (
+                    service.users()
+                    .messages()
+                    .list(userId="me", labelIds=[label_id], maxResults=50)
+                    .execute()
+                ),
+                context={"source": self.name, "op": "messages.list"},
             )
         except Exception as e:
-            log.warning("source.fetch_failed", extra={"source": self.name, "err": str(e)})
+            log.warning("source.fetch_failed", source=self.name, err=str(e))
             return []
 
         messages = results.get("messages", [])
@@ -190,13 +199,18 @@ class GmailSource(Source):
                 continue
 
             try:
-                msg = (
-                    service.users().messages().get(userId="me", id=msg_id, format="full").execute()
+                msg = retry(
+                    lambda mid=msg_id: (
+                        service.users().messages().get(userId="me", id=mid, format="full").execute()
+                    ),
+                    context={"source": self.name, "op": "messages.get", "msg_id": msg_id},
                 )
             except Exception as e:
                 log.warning(
                     "source.message_fetch_failed",
-                    extra={"source": self.name, "msg_id": msg_id, "err": str(e)},
+                    source=self.name,
+                    msg_id=msg_id,
+                    err=str(e),
                 )
                 continue
             headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}

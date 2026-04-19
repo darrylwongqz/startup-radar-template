@@ -239,6 +239,18 @@ Add a new page by dropping `N_name.py` into `pages/`; Streamlit discovers it aut
 
 Launch with `uv run startup-radar serve` (or, for dev: `uv run streamlit run startup_radar/web/app.py`).
 
+### Logging & retries
+
+Logging goes through a single structlog pipeline at `startup_radar/observability/logging.py`. `configure_logging(json=...)` is called exactly once per process — from the CLI `@app.callback` and the Streamlit shell. Locally you get a pretty `ConsoleRenderer`; setting `CI=1` or `STARTUP_RADAR_LOG_JSON=1` flips it to line-delimited JSON for ingest tools. Emit structured events from library code with:
+
+```python
+from startup_radar.observability.logging import get_logger
+log = get_logger(__name__)
+log.warning("source.fetch_failed", source="rss", url=url, status=status)
+```
+
+Source network calls are wrapped in `startup_radar.sources._retry.retry(...)` — three attempts, `(1, 2, 4)` s backoff, fixed exception tuple. The pipeline records every source invocation (success or failure) in a `runs` table (`0002_runs_table.sql`). `uv run startup-radar status` renders a `Per-source health:` block (last-run age + failure streak), and `uv run startup-radar doctor` surfaces a `⚠ source.<key>.streak` row when a source has failed more than twice in a row.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
