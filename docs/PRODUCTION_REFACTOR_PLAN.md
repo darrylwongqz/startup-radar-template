@@ -73,7 +73,7 @@ Don't commit `uv.lock` AND a `requirements.txt`. Pick `uv.lock` as source of tru
 | 6 | ✅ Typer CLI + research/ subpackage + scm versioning | 1 day | **DONE Phase 4** — `startup-radar run|serve|deepdive`; `run --scheduled` folds the old `daily_run.py` logging+timeout; `deepdive.py` relocated to `startup_radar/research/`; `[project.scripts]` + `setuptools-scm` wired. Tag: `phase-4`. |
 | 7 | ✅ Pydantic config + filters move | 0.5 day | **DONE Phase 5** — `startup_radar/config/{schema,loader}.py` (pydantic `AppConfig`, `extra="forbid"`, field-path error messages); `filters.py` → `startup_radar/filters.py` typed against `AppConfig`; `parse_amount_musd` wired in (retired duplicate `_parse_amount_musd`); `Source.fetch(cfg: AppConfig)` retyped and all 4 sources + `cli.py` + `deepdive.py` + `app.py` updated. `.env` / `pydantic-settings` deferred to Phase 13 (no current env-var consumer). Tag: `phase-5`. |
 | 8 | ✅ `startup-radar backup` + `doctor` + `status` | 0.5 day | **DONE Phase 6** — three Typer commands; `Source.healthcheck()` extended to `(cfg, *, network=False) -> tuple[bool, str]` with per-source overrides; `backups/` gitignored; 11 new CLI tests. Tag: `phase-6`. |
-| 9 | GH Actions DB persistence via commit-to-data-branch | 1 day | Pick **one** option. |
+| 9 | ✅ GH Actions DB persistence via commit-to-data-branch | 1 day | **DONE Phase 7** — `daily.yml` rewrite + `data-branch-gc.yml` weekly force-push + `docs/ops/data-branch.md` bootstrap. Tag: `phase-7`. |
 | 10 | vcrpy fixtures + real source tests | 3-4 days | Underestimated in v1.0; cassette recording is fiddly. |
 | 11 | Decompose `app.py` into `web/pages/` + cache wrappers | 2 days | Skip `components/` until ≥3 reuses. |
 | 12 | Storage class + `PRAGMA user_version` migrator (NOT alembic) | 1 day | |
@@ -115,7 +115,7 @@ One CLI. One config path. One DB. Everything else is a `--flag`.
 
 | # | Bug | Location | Fix |
 |---|---|---|---|
-| 1 | **GH Actions DB persistence broken** — cache key uses `${{ github.run_id }}` (unique per run), restore is racy | `.github/workflows/daily.yml:24-29` | Drop `actions/cache`; commit DB to a `data` branch via `EndBug/add-and-commit`, or push to S3/Turso/GH Releases. Without this every "daily" run starts fresh. |
+| 1 | ✅ **FIXED (Phase 7)** GH Actions DB persistence via commit-to-`data`-branch + weekly orphan GC. See `docs/ops/data-branch.md`. |
 | 2 | **OAuth scope split** between Gmail (`gmail.readonly`) and Sheets (`spreadsheets`) — same `token.json` can't serve both | `sources/gmail.py:30`, `sinks/google_sheets.py:13` | Single OAuth client, merged scope list, single `token.json` |
 | 3 | **Silent source failures** — exceptions swallowed to `print()`; dead feed reports 0 candidates indistinguishably from a slow news day | `sources/rss.py:94`, `hackernews.py:45`, `sec_edgar.py:49` | Structured logging w/ severity + per-source success counters surfaced in dashboard |
 | 4 | **Naive dedup** — collapses spaces/dashes only ("WeWork" ≠ "We Work") | `main.py:21` | Normalized-name + canonical domain key in DB; index it |

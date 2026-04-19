@@ -107,10 +107,19 @@ The `/setup-radar` wizard lets you pick which sources to enable.
 
 ## Claude Code skills
 
-When you run `claude` from this project folder, two special commands are available:
+When you run `claude` from this project folder, the following slash commands are available — you don't need to memorize CLI flags:
 
-- **`/setup-radar`** — the setup wizard (first-time configuration)
-- **`/deepdive CompanyName`** — research any company and generate a one-page .docx brief scored against your criteria (e.g. `/deepdive Anthropic`)
+| Command | What it does |
+|---|---|
+| `/setup-radar` | First-time configuration wizard |
+| `/deepdive CompanyName` | One-page company research brief (.docx) |
+| `/run` | Run the discovery pipeline once |
+| `/serve` | Open the Streamlit dashboard |
+| `/doctor` | Validate config, credentials, network |
+| `/status` | Show last-run age + DB row counts |
+| `/backup` | Local tarball of DB + config + OAuth |
+| `/data-branch-bootstrap` | One-time GH Actions DB persistence setup (after fork) |
+| `/data-branch-restore` | Pull the latest prod DB from the cloud |
 
 You can also generate DeepDive reports directly from the dashboard without opening Claude Code.
 
@@ -123,6 +132,19 @@ During setup, Claude will ask how you want to schedule automatic daily runs. Opt
 - **Mac launchd** — same idea, for Mac
 - **Linux cron** — same idea, for Linux
 - **Manual** — just run `startup-radar run --scheduled` whenever you want
+
+### GH Actions scheduling & persistence
+
+`.github/workflows/daily.yml` runs `startup-radar run --scheduled` on a cron schedule and persists `startup_radar.db` by committing it to an orphan `data` branch. First-time setup requires creating the `data` branch once — see [`docs/ops/data-branch.md`](docs/ops/data-branch.md).
+
+To restore the prod DB locally:
+
+```bash
+git fetch origin data:data
+git checkout data -- startup_radar.db
+```
+
+A separate weekly workflow (`data-branch-gc.yml`) force-pushes a fresh orphan commit on `data` to prevent binary-diff bloat.
 
 ## Resilience & maintenance
 

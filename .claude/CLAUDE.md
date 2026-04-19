@@ -70,10 +70,11 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 ```
 
 ## Gotchas
+- `data` branch (GH Actions DB store, Phase 7) — NEVER delete, rebase, or force-push from a developer machine. The daily workflow writes to it; the weekly GC workflow is the only sanctioned force-pusher. To pull the prod DB locally: `git fetch origin data:data && git checkout data -- startup_radar.db`.
 - `feedparser` does NOT take a `timeout` kwarg — `startup_radar/sources/rss.py` uses `socket.setdefaulttimeout(20)` at module load.
 - SEC EDGAR requires `User-Agent: Name email@example.com` header AND ≤10 req/s.
 - Streamlit re-runs the entire script on every interaction — wrap DB reads in `@st.cache_data(ttl=60)` (already done at `app.py:59`).
-- GH Actions cache for the SQLite DB is unsound (`docs/CRITIQUE_APPENDIX.md` §1, item 1) — Phase 9 replaces it with commit-to-data-branch.
+- GH Actions DB persistence uses commit-to-`data`-branch (Phase 7) — see `docs/ops/data-branch.md`. The old `actions/cache`-keyed-by-`run_id` scheme is gone.
 - OAuth scopes for Gmail (`gmail.readonly`) and Sheets (`spreadsheets`) are merged into a single `token.json` — Phase 0 fix.
 - Dedup key strips legal suffixes (`inc`, `llc`, `corp`, `gmbh`, `labs`, etc.) — see `LEGAL_SUFFIX_RE` in `startup_radar/parsing/normalize.py`. Real failure mode is "OpenAI" vs "Open AI Inc.", not whitespace.
 - `parse_amount_musd("$2.5M") -> 2.5` from `startup_radar/parsing/funding.py` is the canonical amount parser — `startup_radar/filters.py` uses it (the duplicate `_parse_amount_musd` retired in Phase 5).
@@ -97,4 +98,4 @@ For Phase 1 plan (this harness): @docs/plans/phase-1.md
 
 ## Do NOT delegate
 - Anything touching secrets, OAuth flows, or `config.yaml` writes — hand back to user.
-- Commits and pushes — surface diff, let the user run `git commit`.
+- Commits and pushes — surface diff, let the user run `git commit`. Two sanctioned exceptions: the `/ship` skill (commit only) and the `/data-branch-bootstrap` skill (one-shot push of the orphan `data` branch). Both gated by env-var handshakes the `pre-bash.sh` hook checks (`STARTUP_RADAR_SHIP=1` and `STARTUP_RADAR_DATA_BOOTSTRAP=1`).

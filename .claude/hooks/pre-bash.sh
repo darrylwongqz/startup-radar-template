@@ -18,6 +18,14 @@ if echo "${cmd}" | grep -qE '(^|&&\s*|;\s*)STARTUP_RADAR_SHIP=1\s+git\s+(commit|
   exit 0
 fi
 
+# Sanctioned data-branch-bootstrap handshake: the /data-branch-bootstrap skill
+# prefixes its push with STARTUP_RADAR_DATA_BOOTSTRAP=1. Only `git push origin data`
+# (with optional --set-upstream) is allowed under this handshake — no other refs,
+# no force flag. Bare `git push` is still subject to the deny rules below.
+if echo "${cmd}" | grep -qE '(^|&&\s*|;\s*)STARTUP_RADAR_DATA_BOOTSTRAP=1\s+git\s+push(\s+--set-upstream)?\s+origin\s+data(\s|$)'; then
+  exit 0
+fi
+
 # Pattern + reason as separate args. Use a function to keep | available for regex alternation.
 check() {
   local pattern="$1"
