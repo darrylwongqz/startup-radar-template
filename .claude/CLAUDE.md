@@ -59,7 +59,7 @@ Target layout (Phase 10+) lives in `docs/PRODUCTION_REFACTOR_PLAN.md` §3.1.
 - **Must:** funding regexes (`AMOUNT_RE`, `STAGE_RE`, `COMPANY_SUBJECT_RE`, `COMPANY_INLINE_RE`) live ONLY in `startup_radar/parsing/funding.py`. Never re-introduce duplicates per source.
 - **Must:** company-name normalization goes through `normalize_company` / `dedup_key` in `startup_radar/parsing/normalize.py`.
 - **Never:** `print()` outside `startup_radar/cli.py`, `startup_radar/research/deepdive.py`, or `tests/` — use `from startup_radar.observability.logging import get_logger; log = get_logger(__name__)`.
-- **Never:** `os.getenv()` outside `startup_radar/config/` (Phase 13 adds `secrets.py` there for `.env` consumers).
+- **Never:** `os.getenv()` outside `startup_radar/config/` — `startup_radar/config/secrets.py` exposes the cached `Secrets(BaseSettings)` instance via `secrets()`; all env-var reads go through it.
 - **Never:** edit `credentials.json`, `token.json`, `.env`, `uv.lock`, or `*.db` files.
 - **Never:** reintroduce `requirements.txt` — `pyproject.toml` + `uv.lock` are authoritative since Phase 2.
 - **Never:** add Postgres, alembic, async pipeline, or dashboard auth — out of scope per `docs/CRITIQUE_APPENDIX.md` §12.
@@ -100,6 +100,7 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 - Logging is structlog with the stdlib bridge (Phase 11). `configure_logging(json: bool)` is called exactly once — at CLI `@app.callback` and inside the dashboard shell. `CI=1` or `STARTUP_RADAR_LOG_JSON=1` flip it to JSON; locally it's a pretty `ConsoleRenderer`. In tests, `tests/conftest.py` autouse-configures it so `caplog.records` sees source warnings. Don't call `logging.basicConfig` anywhere; don't wipe root handlers — our handler is sentinel-tagged and swaps in place so pytest's `LogCaptureHandler` survives.
 - Source network calls go through `startup_radar.sources._retry.retry(fn, on=(...), context={...})` — three attempts, `(1, 2, 4)` s backoff, logs `retry.backoff` at WARNING on each. Sleep is `_retry._sleep` (a module-local alias of `time.sleep`); `conftest.py` autouse-monkeypatches that alias to a no-op so failure-path tests don't cost 7 s each. Do NOT monkeypatch `time.sleep` — it's a module reference and clobbering `.sleep` on it freezes Streamlit's AppTest poll loop.
 - Pipeline wraps each source in `try/except/finally` → `storage.record_run(key, started_at=..., ended_at=..., items_fetched=..., items_kept=..., error=..., user_version_at_run=...)`. `status` renders a `Per-source health:` block using `storage.last_run` + `storage.failure_streak`. `doctor` adds a `⚠ source.<key>.streak` row when failure_streak > 2 (does NOT increment failed checks — advisory only).
+- Env vars go through `from startup_radar.config import secrets; secrets().log_json` (Phase 12). `Secrets` uses `env_prefix="STARTUP_RADAR_"`; `CI` and `SENTRY_DSN` are unprefixed aliases. `.env` is gitignored; `.env.example` documents the knobs. The module-level `secrets()` is `lru_cache`'d; `tests/conftest.py` autouse-clears it so `monkeypatch.setenv` doesn't leak.
 
 ## @import references
 For source-author conventions: @.claude/rules/sources.md

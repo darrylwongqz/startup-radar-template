@@ -8,18 +8,17 @@ Session-state keys read/written here: ``state.LI_CSV_UPLOAD`` (uploader).
 from __future__ import annotations
 
 import csv as _csv
-import os
 from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 
-from startup_radar.config import load_config
+from startup_radar.config import load_config, secrets
 from startup_radar.observability.logging import configure_logging
 from startup_radar.web import state
 from startup_radar.web.cache import get_storage
 
-configure_logging(json=os.getenv("STARTUP_RADAR_LOG_JSON") == "1")
+configure_logging(json=secrets().log_json)
 
 st.set_page_config(page_title="Startup Radar", page_icon=":satellite:", layout="wide")
 

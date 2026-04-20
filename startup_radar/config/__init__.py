@@ -11,6 +11,7 @@ from startup_radar.config.schema import (
     TargetsConfig,
     UserConfig,
 )
+from startup_radar.config.secrets import Secrets, secrets
 
 __all__ = [
     "AppConfig",
@@ -19,8 +20,10 @@ __all__ = [
     "DeepDiveConfig",
     "NetworkConfig",
     "OutputConfig",
+    "Secrets",
     "SourcesConfig",
     "TargetsConfig",
     "UserConfig",
     "load_config",
+    "secrets",
 ]

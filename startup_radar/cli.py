@@ -25,7 +25,10 @@ _LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
 def _json_logs() -> bool:
-    return os.getenv("STARTUP_RADAR_LOG_JSON") == "1" or os.getenv("CI") == "1"
+    from startup_radar.config import secrets
+
+    s = secrets()
+    return s.log_json or s.ci
 
 
 @app.callback()

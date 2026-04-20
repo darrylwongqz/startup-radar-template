@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from startup_radar.config import secrets
 from startup_radar.observability.logging import configure_logging
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +21,13 @@ def _structlog_routes_through_stdlib() -> None:
     sees records. Idempotent: our handler is sentinel-tagged so pytest's
     `LogCaptureHandler` stays attached."""
     configure_logging(json=False)
+
+
+@pytest.fixture(autouse=True)
+def _clear_secrets_cache() -> None:
+    """Reset the lru-cached `Secrets` singleton between tests so monkeypatched
+    env vars don't leak across test boundaries."""
+    secrets.cache_clear()  # type: ignore[attr-defined]
 
 
 @pytest.fixture(autouse=True)
