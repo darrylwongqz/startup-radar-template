@@ -38,7 +38,7 @@
 - `database.py:20-23` — every public function opens a fresh `sqlite3.connect()`. WAL is enabled (line 22) but the per-call connection pattern is wasteful with 33 functions
 - No migrations. Schema bump = manual SQL.
 - Dashboard re-queries entire DB on every Streamlit rerun (`app.py:58`)
-- ✅ **RESOLVED (Phase 7)** — `.github/workflows/daily.yml` rewritten to commit `startup_radar.db` to an orphan `data` branch via `EndBug/add-and-commit@v9` (SHA-pinned). Weekly GC in `.github/workflows/data-branch-gc.yml` prevents bloat. See `docs/ops/data-branch.md` for the one-time bootstrap.
+- ✅ **RESOLVED (Phase 7)** — `.github/workflows/daily.yml` rewritten to commit `startup_radar.db` to an orphan `data` branch via `EndBug/add-and-commit@v9` (SHA-pinned). Weekly GC in `.github/workflows/data-branch-gc.yml` prevents bloat. See `docs/operations/data-branch.md` for the one-time bootstrap.
 
 ### 4. Error handling & observability (MED-HIGH)
 - Silent failures: `sources/rss.py:94`, `sources/hackernews.py:45`, `sources/sec_edgar.py:49` — bare `except → print()`. A dead feed is indistinguishable from a slow news day in dashboard output.

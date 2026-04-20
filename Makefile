@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-unit test-integration test-record lint format format-check typecheck ci serve run doctor db-migrate clean
+.PHONY: help install install-dev test test-unit test-integration test-record lint format format-check typecheck ci serve run doctor db-migrate clean docs docs-serve
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS=":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -53,3 +53,9 @@ db-migrate:  ## Apply pending SQLite migrations (safe to re-run; idempotent)
 clean:  ## Remove build/cache artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache build dist *.egg-info
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+
+docs:  ## Build the MkDocs site into ./site with --strict
+	uv run mkdocs build --strict
+
+docs-serve:  ## Live-reload the MkDocs site on :8000
+	uv run mkdocs serve

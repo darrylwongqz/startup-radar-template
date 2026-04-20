@@ -7,7 +7,7 @@ allowed-tools: [Bash]
 
 # /data-branch-restore — pull prod DB locally
 
-Wraps the two-command restore from `docs/ops/data-branch.md`.
+Wraps the two-command restore from `docs/operations/data-branch.md`.
 
 ## Procedure
 

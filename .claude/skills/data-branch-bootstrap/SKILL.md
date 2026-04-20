@@ -7,7 +7,7 @@ allowed-tools: [Bash]
 
 # /data-branch-bootstrap — orphan data-branch creation
 
-Wraps the 6-command bootstrap from `docs/ops/data-branch.md`. Pushes via the `STARTUP_RADAR_DATA_BOOTSTRAP=1` handshake — the only sanctioned path for Claude to push a new branch in this repo.
+Wraps the 6-command bootstrap from `docs/operations/data-branch.md`. Pushes via the `STARTUP_RADAR_DATA_BOOTSTRAP=1` handshake — the only sanctioned path for Claude to push a new branch in this repo.
 
 ## Procedure
 

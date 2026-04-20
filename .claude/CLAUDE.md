@@ -13,6 +13,7 @@ Single-user Python tool that aggregates startup-funding signals from RSS, Hacker
 - Secrets: `credentials.json`, `token.json`, `.env` — never commit, never read via shell.
 
 ## Repo layout
+<!-- layout:start -->
 ```
 .
 ├── startup_radar/                           # the package (created Phase 3)
@@ -51,8 +52,10 @@ Single-user Python tool that aggregates startup-funding signals from RSS, Hacker
 └── .claude/                                 # this directory — harness
 ```
 Target layout (Phase 10+) lives in `docs/PRODUCTION_REFACTOR_PLAN.md` §3.1.
+<!-- layout:end -->
 
 ## Core invariants
+<!-- invariants:start -->
 - **Must:** every outbound HTTP call goes through `startup_radar.http.get_client(cfg)` — the process-wide `httpx.Client` whose default timeout is `cfg.network.timeout_seconds` and whose default `User-Agent` is `startup-radar/<version>`. No bare `httpx.get` / `requests.*` anywhere under `startup_radar/` (the lone exception is `sources/gmail.py`'s `google.auth.transport.requests.Request`, which is google-auth's internal transport, not our `requests` use).
 - **Must:** every source subclasses `startup_radar.sources.base.Source`, sets `name` + `enabled_key`, and implements `fetch(cfg, storage=None) -> list[Startup]`. Free-function `fetch(...)` is gone since Phase 3. `storage` is only consumed by sources that dedup (today: `gmail.py` via `is_processed` / `mark_processed`).
 - **Must:** every source registers in `startup_radar/sources/registry.py`.
@@ -63,6 +66,7 @@ Target layout (Phase 10+) lives in `docs/PRODUCTION_REFACTOR_PLAN.md` §3.1.
 - **Never:** edit `credentials.json`, `token.json`, `.env`, `uv.lock`, or `*.db` files.
 - **Never:** reintroduce `requirements.txt` — `pyproject.toml` + `uv.lock` are authoritative since Phase 2.
 - **Never:** add Postgres, alembic, async pipeline, or dashboard auth — out of scope per `docs/CRITIQUE_APPENDIX.md` §12.
+<!-- invariants:end -->
 
 ## Common commands
 ```bash
@@ -82,6 +86,7 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 ```
 
 ## Gotchas
+<!-- gotchas:start -->
 - `data` branch (GH Actions DB store, Phase 7) — NEVER delete, rebase, or force-push from a developer machine. The daily workflow writes to it; the weekly GC workflow is the only sanctioned force-pusher. To pull the prod DB locally: `git fetch origin data:data && git checkout data -- startup_radar.db`.
 - `feedparser` has no HTTP of its own anymore — Phase 13 flipped `sources/rss.py` to fetch via `get_client(cfg).get(url)` then `feedparser.parse(r.content)`. The old `socket.setdefaulttimeout(20)` hack is gone; timeout is inherited from the shared client.
 - Shared `httpx.Client` is process-cached by `get_client(cfg)` (keyed on `cfg.network.timeout_seconds`). Tests call `get_client.cache_clear()` via an autouse fixture in `tests/conftest.py` alongside `secrets.cache_clear()`. To stub the client in tests, monkeypatch `startup_radar.sources.<name>.get_client` to return a fake client.
@@ -89,7 +94,7 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 - Streamlit re-runs the entire script on every interaction — wrap DB reads in `@st.cache_data(ttl=60)` via `startup_radar/web/cache.py`. Writes invalidate immediately by calling `load_data.clear()` after the insert.
 - Dashboard sidebar (Run-pipeline button + LinkedIn uploader) lives ONLY in `startup_radar/web/app.py` (the shell). Native multi-page runs the shell on every page render, so sidebar code in the shell appears on every page — do NOT duplicate into pages.
 - Session-state / widget keys in `startup_radar/web/pages/*` go through `startup_radar/web/state.py` constants. `state.assert_no_collisions()` fires at import time; two constants pointing at the same string raise `AssertionError` before Streamlit loads.
-- GH Actions DB persistence uses commit-to-`data`-branch (Phase 7) — see `docs/ops/data-branch.md`. The old `actions/cache`-keyed-by-`run_id` scheme is gone.
+- GH Actions DB persistence uses commit-to-`data`-branch (Phase 7) — see `docs/operations/data-branch.md`. The old `actions/cache`-keyed-by-`run_id` scheme is gone.
 - OAuth scopes for Gmail (`gmail.readonly`) and Sheets (`spreadsheets`) are merged into a single `token.json` — Phase 0 fix.
 - Dedup key strips legal suffixes (`inc`, `llc`, `corp`, `gmbh`, `labs`, etc.) — see `LEGAL_SUFFIX_RE` in `startup_radar/parsing/normalize.py`. Real failure mode is "OpenAI" vs "Open AI Inc.", not whitespace.
 - `parse_amount_musd("$2.5M") -> 2.5` from `startup_radar/parsing/funding.py` is the canonical amount parser — `startup_radar/filters.py` uses it (the duplicate `_parse_amount_musd` retired in Phase 5).
@@ -102,6 +107,8 @@ uv run startup-radar backup [--no-secrets] [--db-only] # local tar.gz of DB + co
 - Source network calls go through `startup_radar.sources._retry.retry(fn, on=(...), context={...})` — three attempts, `(1, 2, 4)` s backoff, logs `retry.backoff` at WARNING on each. Sleep is `_retry._sleep` (a module-local alias of `time.sleep`); `conftest.py` autouse-monkeypatches that alias to a no-op so failure-path tests don't cost 7 s each. Do NOT monkeypatch `time.sleep` — it's a module reference and clobbering `.sleep` on it freezes Streamlit's AppTest poll loop.
 - Pipeline wraps each source in `try/except/finally` → `storage.record_run(key, started_at=..., ended_at=..., items_fetched=..., items_kept=..., error=..., user_version_at_run=...)`. `status` renders a `Per-source health:` block using `storage.last_run` + `storage.failure_streak`. `doctor` adds a `⚠ source.<key>.streak` row when failure_streak > 2 (does NOT increment failed checks — advisory only).
 - Env vars go through `from startup_radar.config import secrets; secrets().log_json` (Phase 12). `Secrets` uses `env_prefix="STARTUP_RADAR_"`; `CI` and `SENTRY_DSN` are unprefixed aliases. `.env` is gitignored; `.env.example` documents the knobs. The module-level `secrets()` is `lru_cache`'d; `tests/conftest.py` autouse-clears it so `monkeypatch.setenv` doesn't leak.
+- Docs live at `docs/` and are rendered by MkDocs Material (Phase 15). Adding a markdown file under `docs/` requires a corresponding entry in `mkdocs.yml` `nav:` — otherwise `mkdocs build --strict` fails in the `.github/workflows/docs.yml` job. `make docs` runs the same strict build locally; `make docs-serve` hot-reloads on `:8000`. `include-markdown` embeds `.claude/CLAUDE.md` (core invariants / gotchas / layout) and `README.md` (hero) via sentinel marker comments — DON'T remove those markers without updating the docs site first.
+<!-- gotchas:end -->
 
 ## @import references
 For source-author conventions: @.claude/rules/sources.md

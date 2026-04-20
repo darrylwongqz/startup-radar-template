@@ -33,7 +33,7 @@ jobs:
           git checkout --orphan data-new
           git rm -rf --cached . || true
           git add startup_radar.db
-          printf '# startup-radar data branch\n\nOrphan branch holding the latest pipeline DB. Weekly GCd. See docs/ops/data-branch.md on main.\n' > README.md
+          printf '# startup-radar data branch\n\nOrphan branch holding the latest pipeline DB. Weekly GCd. See docs/operations/data-branch.md on main.\n' > README.md
           git add README.md
           git commit -m "chore(data): weekly GC $(date -u +%Y-%m-%d)"
           git branch -M data-new data
